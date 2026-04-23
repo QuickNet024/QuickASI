@@ -1,0 +1,676 @@
+/* ============================================
+ * Light Theme — WB亏损计算系统
+ * Design: Material 3 + Microsoft Fluent
+ * Palette: Clean White + Indigo Accent
+ * ============================================ */
+
+/* ── Global ── */
+QMainWindow {
+    background: #F5F5F5;
+}
+QWidget {
+    font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    font-size: 13px;
+    color: #1C1B1F;
+}
+
+/* ── Buttons ── */
+QPushButton {
+    background: #FFFFFF;
+    border: 1px solid #C4C4C4;
+    border-radius: 8px;
+    padding: 7px 22px;
+    color: #4338CA;
+    font-weight: 500;
+    min-height: 34px;
+    font-size: 13px;
+}
+QPushButton:hover {
+    background: #F0F0FF;
+    border-color: #A5B4FC;
+}
+QPushButton:pressed {
+    background: #E0E7FF;
+    border-color: #4338CA;
+}
+QPushButton:disabled {
+    background: #F5F5F5;
+    color: #BDBDBD;
+    border-color: #E0E0E0;
+}
+
+/* Primary Button */
+QPushButton[class="btn-primary"] {
+    background: #4338CA;
+    border: none;
+    color: #FFFFFF;
+    font-weight: 600;
+    border-radius: 8px;
+}
+QPushButton[class="btn-primary"]:hover {
+    background: #3730A3;
+}
+QPushButton[class="btn-primary"]:pressed {
+    background: #312E81;
+}
+QPushButton[class="btn-primary"]:disabled {
+    background: #C7D2FE;
+    color: #FFFFFF;
+}
+
+/* Success Button */
+QPushButton[class="btn-success"] {
+    background: #059669;
+    border: none;
+    color: #FFFFFF;
+    font-weight: 600;
+    border-radius: 8px;
+}
+QPushButton[class="btn-success"]:hover {
+    background: #047857;
+}
+QPushButton[class="btn-success"]:pressed {
+    background: #065F46;
+}
+QPushButton[class="btn-success"]:disabled {
+    background: #A7F3D0;
+    color: #FFFFFF;
+}
+
+/* Icon Button */
+QPushButton[class="btn-icon"] {
+    background: transparent;
+    border: none;
+    padding: 6px 12px;
+    min-height: 28px;
+    border-radius: 8px;
+}
+QPushButton[class="btn-icon"]:hover {
+    background: #EDEDED;
+}
+
+/* ── Input Fields ── */
+QLineEdit {
+    border: 1.5px solid #C4C4C4;
+    border-radius: 8px;
+    padding: 9px 14px;
+    background: #FFFFFF;
+    color: #1C1B1F;
+    selection-background-color: #C7D2FE;
+    font-size: 13px;
+}
+QLineEdit:focus {
+    border-color: #4338CA;
+}
+
+QComboBox {
+    border: 1.5px solid #C4C4C4;
+    border-radius: 8px;
+    padding: 7px 14px;
+    background: #FFFFFF;
+    color: #1C1B1F;
+    min-height: 34px;
+}
+QComboBox:focus {
+    border-color: #4338CA;
+}
+QComboBox::drop-down {
+    border: none;
+    width: 30px;
+}
+QComboBox::down-arrow {
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #666;
+    margin-right: 10px;
+}
+QComboBox QAbstractItemView {
+    border: 1px solid #C4C4C4;
+    background: #FFFFFF;
+    selection-background-color: #E0E7FF;
+    selection-color: #4338CA;
+    outline: none;
+    border-radius: 6px;
+    padding: 4px;
+}
+
+QDoubleSpinBox, QSpinBox {
+    border: 1.5px solid #C4C4C4;
+    border-radius: 8px;
+    padding: 7px 14px;
+    background: #FFFFFF;
+    color: #1C1B1F;
+}
+QDoubleSpinBox:focus, QSpinBox:focus {
+    border-color: #4338CA;
+}
+
+/* ── Tables ── */
+QTableWidget {
+    background: #FFFFFF;
+    alternate-background-color: #F9F9F9;
+    gridline-color: #E8E8E8;
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+    selection-background-color: #E0E7FF;
+    selection-color: #4338CA;
+    outline: none;
+    font-size: 13px;
+}
+QTableWidget::item {
+    padding: 8px 14px;
+    border-bottom: 1px solid #F0F0F0;
+}
+QTableWidget::item:selected {
+    background: #E0E7FF;
+}
+
+QHeaderView::section {
+    background: #F5F5F5;
+    color: #555;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 12px 14px;
+    border: none;
+    border-bottom: 2px solid #E0E0E0;
+    border-right: 1px solid #EEEEEE;
+    letter-spacing: 0.3px;
+}
+QHeaderView::section:hover {
+    background: #EDEDED;
+}
+
+/* ── Group Boxes (Card Style) ── */
+QGroupBox {
+    border: 1px solid #E0E0E0;
+    border-radius: 14px;
+    margin-top: 22px;
+    padding: 24px 18px 18px 18px;
+    font-weight: 600;
+    font-size: 14px;
+    background: #FFFFFF;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 18px;
+    padding: 0 10px;
+    color: #1C1B1F;
+    background: #FFFFFF;
+}
+
+/* ── Splitter ── */
+QSplitter::handle {
+    background: #E0E0E0;
+}
+QSplitter::handle:horizontal {
+    width: 1px;
+}
+QSplitter::handle:vertical {
+    height: 1px;
+}
+QSplitter::handle:hover {
+    background: #4338CA;
+}
+
+/* ── Scrollbars ── */
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    margin: 0;
+}
+QScrollBar::handle:vertical {
+    background: #C4C4C4;
+    border-radius: 4px;
+    min-height: 40px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #999;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+QScrollBar:horizontal {
+    background: transparent;
+    height: 8px;
+    margin: 0;
+}
+QScrollBar::handle:horizontal {
+    background: #C4C4C4;
+    border-radius: 4px;
+    min-width: 40px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #999;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {
+    width: 0;
+}
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none;
+}
+
+/* ── Status Bar ── */
+QStatusBar {
+    background: #FFFFFF;
+    border-top: 1px solid #E0E0E0;
+    color: #666;
+    font-size: 12px;
+    padding: 4px 14px;
+}
+
+/* ── Progress Bar ── */
+QProgressBar {
+    border: none;
+    border-radius: 4px;
+    background: #E0E0E0;
+    height: 6px;
+    text-align: center;
+}
+QProgressBar::chunk {
+    background: #4338CA;
+    border-radius: 4px;
+}
+
+/* ── Tab Widget ── */
+QTabWidget::pane {
+    border: none;
+    background: transparent;
+}
+QTabBar::tab {
+    background: transparent;
+    color: #666;
+    padding: 10px 22px;
+    border-bottom: 2px solid transparent;
+    font-size: 13px;
+}
+QTabBar::tab:selected {
+    color: #4338CA;
+    border-bottom-color: #4338CA;
+    font-weight: 600;
+}
+QTabBar::tab:hover:!selected {
+    color: #4338CA;
+    background: #F5F5F5;
+}
+
+/* ── Menu Bar ── */
+QMenuBar {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E0E0E0;
+    color: #555;
+    font-size: 13px;
+    padding: 2px 0;
+}
+QMenuBar::item {
+    padding: 8px 16px;
+    background: transparent;
+    border-radius: 4px;
+}
+QMenuBar::item:selected {
+    background: #E0E7FF;
+    color: #4338CA;
+}
+QMenu {
+    background: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+    padding: 8px 0;
+}
+QMenu::item {
+    padding: 8px 32px;
+    color: #1C1B1F;
+}
+QMenu::item:selected {
+    background: #E0E7FF;
+    color: #4338CA;
+}
+QMenu::separator {
+    height: 1px;
+    background: #E0E0E0;
+    margin: 4px 0;
+}
+
+/* ── Dialog ── */
+QDialog {
+    background: #FFFFFF;
+}
+QDialogButtonBox QPushButton {
+    min-width: 88px;
+    border-radius: 8px;
+    padding: 8px 24px;
+}
+
+/* ── Tooltips ── */
+QToolTip {
+    background: #333;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+}
+
+/* ── CheckBox — 使用原生渲染确保勾选标记清晰 ── */
+QCheckBox {
+    spacing: 8px;
+    color: #1C1B1F;
+}
+
+/* ── Radio Buttons ── */
+QRadioButton {
+    spacing: 6px;
+    color: #1C1B1F;
+}
+QRadioButton::indicator {
+    width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    border: 2px solid #777;
+    background: #FFFFFF;
+}
+QRadioButton::indicator:checked {
+    background: #4338CA;
+    border-color: #4338CA;
+}
+
+/* ══════════════════════════════════════════════
+ * Sidebar
+ * ══════════════════════════════════════════════ */
+QWidget#sidebar {
+    background: #FFFFFF;
+    border-right: 1px solid #E0E0E0;
+}
+
+/* ══════════════════════════════════════════════
+ * Top Bar
+ * ══════════════════════════════════════════════ */
+QWidget#topbar {
+    background: #FFFFFF;
+    border-bottom: 1px solid #E0E0E0;
+    min-height: 48px;
+    max-height: 56px;
+}
+
+QLabel#exchangeRate {
+    font-weight: 600;
+    font-size: 13px;
+    color: #1C1B1F;
+}
+
+QLabel#exchangeTimestamp {
+    color: #888;
+    font-size: 11px;
+}
+
+/* ── Stat Labels ── */
+QLabel[class="stat-profit"] {
+    color: #059669;
+    font-weight: 600;
+    font-size: 14px;
+}
+QLabel[class="stat-loss"] {
+    color: #DC2626;
+    font-weight: 600;
+    font-size: 14px;
+}
+QLabel[class="stat-unmatched"] {
+    color: #888;
+    font-size: 13px;
+}
+QLabel[class="stat-total"] {
+    font-weight: 600;
+    font-size: 14px;
+    color: #1C1B1F;
+}
+QLabel[class="stat-label"] {
+    color: #888;
+    font-size: 11px;
+}
+
+/* ── Result Table Header ── */
+QTableWidget#resultTable {
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+}
+QTableWidget#resultTable QHeaderView::section {
+    background: #F5F5F5;
+    color: #555;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 12px 14px;
+    border: 1px solid #E0E0E0;
+    letter-spacing: 0.3px;
+}
+
+/* ── Thumbnail Placeholder ── */
+QLabel[class="thumbnail-placeholder"] {
+    background: #F5F5F5;
+    border: 1px dashed #C4C4C4;
+    border-radius: 8px;
+    color: #BDBDBD;
+    font-size: 10px;
+}
+
+/* ══════════════════════════════════════════════
+ * Data Card (legacy)
+ * ══════════════════════════════════════════════ */
+QWidget#dataCard {
+    background: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 14px;
+}
+QWidget#dataCard QLabel {
+    background: transparent;
+    border: none;
+}
+QWidget#dataCard QLabel#cardTitle {
+    color: #1C1B1F;
+    font-size: 14px;
+    font-weight: bold;
+}
+QWidget#dataCard QFrame#cardSep {
+    background: #E8E8E8;
+    border: none;
+    max-height: 1px;
+}
+
+/* ══════════════════════════════════════════════
+ * Module Card V2 — 分类 accent 色卡片
+ * ══════════════════════════════════════════════ */
+QWidget#moduleCard {
+    background: #FFFFFF;
+    border: 1.5px solid #D4D4D4;
+    border-bottom: 3px solid #B8B8B8;
+    border-radius: 16px;
+    min-height: 60px;
+}
+QWidget#moduleCard QLabel {
+    background: transparent;
+    border: none;
+}
+QWidget#moduleCard QLabel#moduleIcon {
+    font-size: 20px;
+    color: #1C1B1F;
+}
+QWidget#moduleCard QLabel#moduleTitle {
+    color: #1C1B1F;
+    font-size: 15px;
+    font-weight: bold;
+}
+QWidget#moduleCard QLabel#moduleVersion {
+    color: #9CA3AF;
+    font-size: 11px;
+}
+QWidget#moduleCard QLabel#moduleDesc {
+    color: #666;
+    font-size: 11px;
+}
+
+/* ── Accent 分割线（2px，按分类着色） ── */
+QFrame#moduleAccentSep {
+    border: none;
+    max-height: 2px;
+    border-radius: 1px;
+}
+
+/* ── Blue accent: 飞书 ── */
+QWidget#moduleCard[accent="blue"] {
+    border-bottom-color: #4338CA;
+}
+QWidget#moduleCard[accent="blue"]:hover {
+    border-color: #A5B4FC;
+    border-bottom-color: #4338CA;
+    background: #FAFAFF;
+}
+QWidget#moduleCard[accent="blue"] QFrame#moduleAccentSep {
+    background: #4338CA;
+}
+QWidget#moduleCard[accent="blue"] QLabel#moduleIcon {
+    color: #4338CA;
+}
+
+/* ── Green accent: 佣金 ── */
+QWidget#moduleCard[accent="green"] {
+    border-bottom-color: #059669;
+}
+QWidget#moduleCard[accent="green"]:hover {
+    border-color: #6EE7B7;
+    border-bottom-color: #059669;
+    background: #F0FDF9;
+}
+QWidget#moduleCard[accent="green"] QFrame#moduleAccentSep {
+    background: #059669;
+}
+QWidget#moduleCard[accent="green"] QLabel#moduleIcon {
+    color: #059669;
+}
+
+/* ── Orange accent: 汇率 ── */
+QWidget#moduleCard[accent="orange"] {
+    border-bottom-color: #D97706;
+}
+QWidget#moduleCard[accent="orange"]:hover {
+    border-color: #FCD34D;
+    border-bottom-color: #D97706;
+    background: #FFFBEB;
+}
+QWidget#moduleCard[accent="orange"] QFrame#moduleAccentSep {
+    background: #D97706;
+}
+QWidget#moduleCard[accent="orange"] QLabel#moduleIcon {
+    color: #D97706;
+}
+
+/* ── Legacy (for old moduleSep) ── */
+QWidget#moduleCard QFrame#moduleSep {
+    background: #EBEBEB;
+    border: none;
+    max-height: 1px;
+}
+
+/* ── Module Card Remove Button ── */
+QPushButton#moduleRemoveBtn {
+    background: transparent;
+    border: none;
+    color: #CCC;
+    font-size: 16px;
+    font-weight: bold;
+    border-radius: 12px;
+    padding: 0px;
+    min-height: 24px;
+    min-width: 24px;
+}
+QPushButton#moduleRemoveBtn:hover {
+    background: #FEE2E2;
+    color: #DC2626;
+}
+QPushButton#moduleRemoveBtn:pressed {
+    background: #FECACA;
+    color: #B91C1C;
+}
+
+/* ── Manage Interface Button ── */
+QPushButton#btnAddInterface {
+    background: #F9F9F9;
+    border: 2px dashed #C4C4C4;
+    border-radius: 14px;
+    color: #666;
+    font-size: 14px;
+    font-weight: 500;
+}
+QPushButton#btnAddInterface:hover {
+    background: #F0F0FF;
+    border-color: #4338CA;
+    color: #4338CA;
+}
+QPushButton#btnAddInterface:pressed {
+    background: #E0E7FF;
+    border-color: #4338CA;
+    color: #4338CA;
+}
+
+/* ── Feishu Info Box (Blue) ── */
+QFrame#feishuInfoBox {
+    background: #E0E7FF;
+    border: 1px solid #C7D2FE;
+    border-radius: 10px;
+}
+QFrame#feishuInfoBox QLabel {
+    background: transparent;
+    border: none;
+}
+
+/* ── Commission Info Box (Green) ── */
+QFrame#commissionInfoBox {
+    background: #D1FAE5;
+    border: 1px solid #6EE7B7;
+    border-radius: 10px;
+}
+QFrame#commissionInfoBox QLabel {
+    background: transparent;
+    border: none;
+}
+
+/* ── Rate Box / Exchange Rate Info (Orange) ── */
+QFrame#rateBox {
+    background: #FEF3C7;
+    border: 1px solid #FCD34D;
+    border-radius: 10px;
+}
+QFrame#rateBox QLabel {
+    background: transparent;
+    border: none;
+}
+QLabel#rateValue {
+    font-size: 24px;
+    font-weight: bold;
+    color: #D97706;
+}
+QLabel#rateHint {
+    font-size: 11px;
+    color: #92400E;
+}
+
+/* ── Settings Page Card ── */
+QGroupBox#settingsCard {
+    background: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 14px;
+    margin-top: 0px;
+    padding: 22px 18px 18px 18px;
+}
+QGroupBox#settingsCard::title {
+    subcontrol-origin: border;
+    subcontrol-position: top center;
+    padding: 4px 18px;
+    color: #1C1B1F;
+    background: #FFFFFF;
+    font-weight: bold;
+    font-size: 14px;
+}

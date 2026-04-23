@@ -1,0 +1,11 @@
+{
+  "module_id": "commission",
+  "name": "佣金数据",
+  "description": "导入或同步平台佣金表",
+  "platforms": ["wb", "ozon", "market"],
+  "shop_types": ["local", "cross_border"],
+  "import": {
+    "supported_formats": [".xlsx", ".xls"],
+    "batch_size": 100
+  }
+}

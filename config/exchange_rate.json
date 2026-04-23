@@ -1,0 +1,11 @@
+{
+  "module_id": "exchange_rate",
+  "name": "汇率数据",
+  "description": "同步实时汇率 CNY → RUB",
+  "api": {
+    "api_key": "81a7d8d9d546ae6edb4546c1",
+    "api_url": "https://v6.exchangerate-api.com/v6/{key}/latest/USD",
+    "request_timeout_sec": 15,
+    "cache_ttl_hours": 6
+  }
+}

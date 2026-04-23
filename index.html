@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>跨境电商智能定价计算器 (全功能版)</title>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+            --text-primary: #333333;
+            --text-secondary: #666666;
+            --border-color: #e8e8e8;
+            --primary-blue: #1890ff;
+            --success-green: #52c41a;
+            --accent-purple: #722ed1;
+            --accent-orange: #fa8c16;
+            --danger-red: #ff4d4f;
+            --header-bg: #001529;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            color: var(--text-primary);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Header & Actions */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            background: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .header-title h1 {
+            color: var(--header-bg);
+            font-size: 22px;
+            margin: 0;
+        }
+        .header-title p {
+            color: var(--text-secondary);
+            font-size: 13px;
+            margin: 5px 0 0 0;
+        }
+        .action-btns button {
+            cursor: pointer;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            margin-left: 10px;
+        }
+        .btn-save { background-color: var(--primary-blue); color: white; }
+        .btn-save:hover { background-color: #096dd9; }
+        .btn-reset { background-color: #f5f5f5; color: #666; border: 1px solid #d9d9d9 !important; }
+        .btn-reset:hover { background-color: #e6e6e6; }
+
+        /* Dimension Bar */
+        .dim-bar {
+            background: linear-gradient(135deg, #1890ff 0%, #36cfc9 100%);
+            padding: 20px;
+            border-radius: 10px;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            box-shadow: 0 4px 15px rgba(24, 144, 255, 0.2);
+            margin-bottom: 20px;
+        }
+        .dim-input-group label {
+            font-weight: 500;
+            margin-right: 10px;
+            font-size: 16px;
+        }
+        .dim-input-group input {
+            padding: 10px;
+            border-radius: 5px;
+            border: none;
+            width: 200px;
+            font-size: 16px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            color: #333;
+            font-weight: bold;
+        }
+        .dim-hint {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+
+        /* Grid Layouts */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        /* Card Styles */
+        .card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+        .card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+
+        .card-header {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-header.blue { color: var(--primary-blue); border-bottom-color: rgba(24, 144, 255, 0.2); }
+        .card-header.green { color: var(--success-green); border-bottom-color: rgba(82, 196, 26, 0.2); }
+        .card-header.purple { color: var(--accent-purple); border-bottom-color: rgba(114, 46, 209, 0.2); }
+        .card-header.orange { color: var(--accent-orange); border-bottom-color: rgba(250, 140, 22, 0.2); }
+
+        /* Input Rows */
+        .input-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        .input-row label {
+            flex: 1;
+            color: var(--text-secondary);
+        }
+        .input-row input {
+            width: 90px;
+            padding: 6px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            text-align: right;
+            font-family: monospace;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .input-row input:focus {
+            border-color: var(--primary-blue);
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+        }
+        .input-unit {
+            width: 25px;
+            text-align: right;
+            font-size: 12px;
+            color: #999;
+        }
+
+        /* Intermediate Values Layout Fix */
+        .intermediate-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr; 
+            gap: 20px;
+        }
+
+        .info-row {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 12px;
+            background-color: #fafafa;
+            border-radius: 6px;
+            border: 1px solid #eee;
+            height: 100%;
+            box-sizing: border-box;
+        }
+        .info-row-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .info-label { font-size: 13px; color: #666; }
+        .info-val { font-weight: bold; font-size: 16px; color: #333; }
+        .info-desc { font-size: 11px; color: #999; margin-top: 2px; display: block; }
+
+        /* Result Cards */
+        .result-card {
+            border-top: 4px solid transparent;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+        .result-input-area {
+            background-color: rgba(0,0,0,0.02);
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .result-input-area label {
+            display: block;
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .result-input-area input {
+            width: 90%;
+            padding: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+        }
+        
+        .main-result {
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .main-result-label { font-size: 13px; color: #999; margin-bottom: 5px; }
+        .main-result-val { font-size: 28px; font-weight: 800; line-height: 1.2; }
+        
+        .sub-result-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            margin-top: 8px;
+            border-top: 1px dashed #eee;
+            padding-top: 8px;
+            align-items: center;
+        }
+        .sub-result-val {
+            font-weight: 600;
+            color: #333;
+        }
+
+        /* Specific Colors */
+        .border-green { border-top-color: var(--success-green); }
+        .border-purple { border-top-color: var(--accent-purple); }
+        .border-orange { border-top-color: var(--accent-orange); }
+
+        .text-green { color: var(--success-green); }
+        .text-red { color: var(--danger-red); }
+        .text-purple { color: var(--accent-purple); }
+        .text-orange { color: var(--accent-orange); }
+        .text-blue { color: var(--primary-blue); }
+
+        /* Responsive */
+        @media (max-width: 900px) {
+            .main-grid, .results-grid, .intermediate-grid {
+                grid-template-columns: 1fr;
+            }
+            .dim-bar, header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            .action-btns {
+                margin-top: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <h1>跨境电商智能定价计算器</h1>
+                <p>自动保存 | 提现费率精确算法 | 含平台扣费明细</p>
+            </div>
+            <div class="action-btns">
+                <button class="btn-save" onclick="saveParams()">💾 保存当前配置</button>
+                <button class="btn-reset" onclick="resetParams()">↻ 重置默认值</button>
+            </div>
+        </header>
+
+        <!-- Zone 0: Dimension Input -->
+        <div class="dim-bar">
+            <div class="dim-input-group">
+                <label>📦 商品包装尺寸 (cm)</label>
+                <input type="text" id="dimInput" value="51*14*5" placeholder="例如: 46*35*27" oninput="parseDimensions()">
+            </div>
+            <div class="dim-hint">
+                逻辑: (长*宽*高)/1000*2 + 6 <br>
+                会自动更新下方【平台运费】
+            </div>
+        </div>
+
+        <div class="main-grid">
+            <!-- Zone 1: Costs -->
+            <div class="card">
+                <div class="card-header blue">1. 产品与物流成本 (CNY)</div>
+                <div class="input-row">
+                    <label>汇率风险系数</label>
+                    <input type="number" id="riskRate" value="1.00" step="0.01" oninput="calculate()">
+                </div>
+                <div class="input-row">
+                    <label>商品原价成本</label>
+                    <input type="number" id="productCost" value="132" oninput="calculate()">
+                </div>
+                <div class="input-row">
+                    <label>代发费</label>
+                    <input type="number" id="dropShipFee" value="10" oninput="calculate()">
+                </div>
+                <div class="input-row">
+                    <label>包装费</label>
+                    <input type="number" id="packFee" value="0" oninput="calculate()">
+                </div>
+                <div class="input-row" style="background-color: #e6f7ff; padding: 5px; border-radius: 4px;">
+                    <label style="color: #1890ff; font-weight: bold;">平台运费 (自动算)</label>
+                    <input type="number" id="platformShipFee" value="13.14" oninput="calculate()">
+                </div>
+                <div class="input-row">
+                    <label>平台扫码费</label>
+                    <input type="number" id="scanFee" value="1" oninput="calculate()">
+                </div>
+                <div class="input-row">
+                    <label>退货取货点费</label>
+                    <input type="number" id="returnPickupFee" value="0" oninput="calculate()">
+                </div>
+                <div class="input-row">
+                    <label>退货处理费 (人工)</label>
+                    <input type="number" id="returnProcessFee" value="10" oninput="calculate()">
+                </div>
+            </div>
+
+            <!-- Zone 2: Rates -->
+            <div class="card">
+                <div class="card-header blue">2. 费率与损耗设置 (%)</div>
+                <div class="input-row">
+                    <label>退货残值损失率</label>
+                    <input type="number" id="residualLossRate" value="15" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+                <div class="input-row">
+                    <label>货损率</label>
+                    <input type="number" id="damageRate" value="2.0" step="0.1" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+                <div class="input-row">
+                    <label>退货率</label>
+                    <input type="number" id="returnRate" value="15" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+                <div class="input-row">
+                    <label>平台佣金率</label>
+                    <input type="number" id="commissionRate" value="10" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+                <div class="input-row">
+                    <label>佣金优惠减免率</label>
+                    <input type="number" id="commissionDisc" value="0" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+                <div class="input-row">
+                    <label>提现手续费</label>
+                    <input type="number" id="withdrawFee" value="1" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+                <div class="input-row">
+                    <label>广告 - 固定支出</label>
+                    <input type="number" id="adFixed" value="0" oninput="calculate()"><span class="input-unit">元</span>
+                </div>
+                <div class="input-row">
+                    <label>广告 - 百分比(ACOS)</label>
+                    <input type="number" id="adPercent" value="2.50" step="0.1" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+                <div class="input-row">
+                    <label>固定运营成本率</label>
+                    <input type="number" id="opsRate" value="3" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+                <div class="input-row">
+                    <label>会员折扣率</label>
+                    <input type="number" id="memberDisc" value="3" oninput="calculate()"><span class="input-unit">%</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Zone 3: Intermediate -->
+        <div class="card" style="margin-bottom: 20px; border-left: 5px solid #8c8c8c;">
+            <div class="card-header" style="color: #555;">3. 中间计算参数 (参考)</div>
+            <div class="intermediate-grid">
+                
+                <div class="info-row">
+                    <div class="info-row-header">
+                        <span class="info-label">综合变动费率 (R_Total)</span>
+                        <span class="info-val" id="val_RVar">0.00%</span>
+                    </div>
+                    <span class="info-desc">含提现(扣除佣金部分) + 广告% + 运营</span>
+                </div>
+
+                <div class="info-row">
+                    <div class="info-row-header">
+                        <span class="info-label">单件基础总成本 (Cbase)</span>
+                        <span class="info-val" id="val_Cbase">0.00</span>
+                    </div>
+                    <span class="info-desc">含汇率与货损风险</span>
+                </div>
+
+                <div class="info-row">
+                    <div class="info-row-header">
+                        <span class="info-label">退货风险预期损失 (Crisk)</span>
+                        <span class="info-val" id="val_Crisk">0.00</span>
+                    </div>
+                    <span class="info-desc">包含运费损失与商品折旧</span>
+                </div>
+
+                <div class="info-row" style="background-color: #fff1f0; border-color: #ffa39e;">
+                    <div class="info-row-header">
+                        <span class="info-label" style="color: #cf1322;">最低成本售价 (盈亏平衡)</span>
+                        <span class="info-val" style="color: #cf1322;" id="val_BreakEven">0.00</span>
+                    </div>
+                    <span class="info-desc">保本价，利润为0</span>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Pricing Results -->
+        <div class="results-grid">
+            
+            <!-- Zone 4: Set Price -->
+            <div class="card result-card border-green">
+                <div>
+                    <div class="card-header green">4. 设定销售价格</div>
+                    <div class="result-input-area">
+                        <label>设定您的销售价格 (G1):</label>
+                        <input type="number" id="targetPriceInput" value="230" oninput="calcScenarioPrice()">
+                    </div>
+                    
+                    <div class="main-result">
+                        <div class="main-result-label">计算结果: 利润额</div>
+                        <div class="main-result-val" id="res_Price_Profit">0.00</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="sub-result-row">
+                        <span>利润率</span>
+                        <span class="sub-result-val" id="res_Price_Margin">0.00%</span>
+                    </div>
+                    <div class="sub-result-row" style="background-color: #f6ffed; padding: 2px 5px; border-radius: 4px;">
+                        <span>预计提现金额</span>
+                        <span class="sub-result-val text-green" id="res_Price_EstWithdraw">0.00</span>
+                    </div>
+                    <!-- New Field -->
+                    <div class="sub-result-row">
+                        <span>平台扣费(佣+运+扫)</span>
+                        <span class="sub-result-val" id="res_Price_PlatformFee">0.00</span>
+                    </div>
+                    <div class="sub-result-row">
+                        <span>广告支出 (固+%)</span>
+                        <span class="sub-result-val" id="res_Price_AdSpend">0.00</span>
+                    </div>
+                    <div class="sub-result-row">
+                        <span style="color:#999">费用合计(总成本)</span>
+                        <span class="sub-result-val" style="color:#999" id="res_Price_TotalCost">0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Zone 5: Set Markup % -->
+            <div class="card result-card border-purple">
+                <div>
+                    <div class="card-header purple">5. 设定加价率/利润率</div>
+                    <div class="result-input-area">
+                        <label>设定加价率 (%):</label>
+                        <input type="number" id="targetMarginInput" value="10" oninput="calcScenarioMargin()">
+                    </div>
+                    
+                    <div class="main-result">
+                        <div class="main-result-label">建议售价</div>
+                        <div class="main-result-val text-purple" id="res_Margin_Price">0.00</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="sub-result-row">
+                        <span>对应利润额</span>
+                        <span class="sub-result-val" id="res_Margin_Profit">0.00</span>
+                    </div>
+                    <div class="sub-result-row" style="background-color: #f9f0ff; padding: 2px 5px; border-radius: 4px;">
+                        <span>预计提现金额</span>
+                        <span class="sub-result-val text-purple" id="res_Margin_EstWithdraw">0.00</span>
+                    </div>
+                    <!-- New Field -->
+                    <div class="sub-result-row">
+                        <span>平台扣费(佣+运+扫)</span>
+                        <span class="sub-result-val" id="res_Margin_PlatformFee">0.00</span>
+                    </div>
+                    <div class="sub-result-row">
+                        <span>广告支出</span>
+                        <span class="sub-result-val" id="res_Margin_AdSpend">0.00</span>
+                    </div>
+                    <div class="sub-result-row">
+                        <span>费用合计</span>
+                        <span class="sub-result-val" id="res_Margin_TotalCost">0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Zone 6: Set Profit Amount -->
+            <div class="card result-card border-orange">
+                <div>
+                    <div class="card-header orange">6. 设定目标利润额</div>
+                    <div class="result-input-area">
+                        <label>设定目标利润 (金额):</label>
+                        <input type="number" id="targetProfitInput" value="20" oninput="calcScenarioProfit()">
+                    </div>
+                    
+                    <div class="main-result">
+                        <div class="main-result-label">建议售价</div>
+                        <div class="main-result-val text-orange" id="res_Profit_Price">0.00</div>
+                    </div>
+                </div>
+                <div>
+                    <div class="sub-result-row">
+                        <span>对应利润率</span>
+                        <span class="sub-result-val" id="res_Profit_Margin">0.00%</span>
+                    </div>
+                    <div class="sub-result-row" style="background-color: #fff7e6; padding: 2px 5px; border-radius: 4px;">
+                        <span>预计提现金额</span>
+                        <span class="sub-result-val text-orange" id="res_Profit_EstWithdraw">0.00</span>
+                    </div>
+                    <!-- New Field -->
+                    <div class="sub-result-row">
+                        <span>平台扣费(佣+运+扫)</span>
+                        <span class="sub-result-val" id="res_Profit_PlatformFee">0.00</span>
+                    </div>
+                    <div class="sub-result-row">
+                        <span>广告支出</span>
+                        <span class="sub-result-val" id="res_Profit_AdSpend">0.00</span>
+                    </div>
+                    <div class="sub-result-row">
+                        <span>费用合计</span>
+                        <span class="sub-result-val" id="res_Profit_TotalCost">0.00</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const V = (id) => parseFloat(document.getElementById(id).value) || 0;
+        const S = (id, val, isPercent = false, isCurrency = true) => {
+            const el = document.getElementById(id);
+            if(isPercent) {
+                el.innerText = (val * 100).toFixed(2) + '%';
+            } else {
+                el.innerText = val.toFixed(isCurrency ? 2 : 4);
+            }
+        };
+
+        // --- Local Storage Functions ---
+        const STORAGE_KEY = 'calc_params_v4';
+        const inputIds = [
+            'dimInput', 'riskRate', 'productCost', 'dropShipFee', 'packFee', 'platformShipFee',
+            'scanFee', 'returnPickupFee', 'returnProcessFee', 'residualLossRate', 'damageRate',
+            'returnRate', 'commissionRate', 'commissionDisc', 'withdrawFee', 'adFixed',
+            'adPercent', 'opsRate', 'memberDisc', 'targetPriceInput', 'targetMarginInput', 'targetProfitInput'
+        ];
+
+        function saveParams() {
+            const data = {};
+            inputIds.forEach(id => {
+                data[id] = document.getElementById(id).value;
+            });
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+            const btn = document.querySelector('.btn-save');
+            const originalText = btn.innerText;
+            btn.innerText = '✅ 已保存';
+            setTimeout(() => btn.innerText = originalText, 1500);
+        }
+
+        function loadParams() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                const data = JSON.parse(saved);
+                inputIds.forEach(id => {
+                    if (data[id] !== undefined) {
+                        document.getElementById(id).value = data[id];
+                    }
+                });
+                calculate();
+            }
+        }
+
+        function resetParams() {
+            if(confirm("确定要重置所有参数为默认值吗？")) {
+                localStorage.removeItem(STORAGE_KEY);
+                location.reload();
+            }
+        }
+
+        // --- Calculation Logic ---
+
+        function parseDimensions() {
+            const input = document.getElementById('dimInput').value;
+            const matches = input.match(/(\d+(\.\d+)?)/g);
+            
+            if (matches && matches.length >= 3) {
+                const L = parseFloat(matches[0]);
+                const W = parseFloat(matches[1]);
+                const H = parseFloat(matches[2]);
+                const fee = (L * W * H) / 1000 * 2 + 6;
+                document.getElementById('platformShipFee').value = fee.toFixed(2);
+                calculate();
+            }
+        }
+
+        let Cbase, Crisk, R_Total, Fixed_Ads, Total_Fixed, RealComm, WithdrawRate, PlatformShip;
+
+        function calculate() {
+            const risk = V('riskRate');
+            const cost = V('productCost');
+            const drop = V('dropShipFee');
+            const pack = V('packFee');
+            PlatformShip = V('platformShipFee');
+            const scan = V('scanFee');
+            const pickup = V('returnPickupFee');
+            const process = V('returnProcessFee');
+
+            const resLoss = V('residualLossRate') / 100;
+            const dmgRate = V('damageRate') / 100;
+            const retRate = V('returnRate') / 100;
+            
+            const commRate = V('commissionRate') / 100;
+            const commDisc = V('commissionDisc') / 100;
+            WithdrawRate = V('withdrawFee') / 100;
+            
+            Fixed_Ads = V('adFixed');
+            const adPct = V('adPercent') / 100;
+            const opsPct = V('opsRate') / 100;
+            const memDisc = V('memberDisc') / 100;
+
+            // 1. Costs
+            const sumLogistics = cost + drop + pack + PlatformShip + scan;
+            Cbase = (sumLogistics * risk) / (1 - dmgRate);
+
+            // 2. Risk
+            const lossPerReturn = drop + PlatformShip + scan + pickup + process + (cost * resLoss);
+            Crisk = retRate * lossPerReturn;
+
+            // 3. Logic: R_Total & Fixed Adjusted
+            RealComm = commRate * (1 - commDisc);
+            const effectiveWithdrawRate = WithdrawRate * (1 - RealComm);
+            R_Total = RealComm + effectiveWithdrawRate + adPct + opsPct + memDisc;
+
+            const withdrawSavingFromShip = PlatformShip * WithdrawRate;
+            Total_Fixed = Cbase + Crisk + Fixed_Ads - withdrawSavingFromShip;
+
+            // 4. Break Even
+            const BreakEven = Total_Fixed / (1 - R_Total);
+
+            S('val_Cbase', Cbase);
+            S('val_Crisk', Crisk);
+            S('val_RVar', R_Total, true);
+            S('val_BreakEven', BreakEven);
+
+            calcScenarioPrice();
+            calcScenarioMargin();
+            calcScenarioProfit();
+        }
+
+        // Helper to calculate details from a determined price
+        function updateDetails(prefix, price, profit) {
+            const adPct = V('adPercent') / 100;
+            const scan = V('scanFee');
+            
+            // Withdraw Logic
+            const commissionAmount = price * RealComm;
+            let withdrawBase = price - commissionAmount - PlatformShip;
+            if (withdrawBase < 0) withdrawBase = 0;
+            const withdrawFee = withdrawBase * WithdrawRate;
+            const estWithdraw = withdrawBase - withdrawFee;
+
+            // Ad Spend
+            const adSpend = Fixed_Ads + (price * adPct);
+
+            // Platform Fees (Commission + Ship + Scan)
+            const platformFee = commissionAmount + PlatformShip + scan;
+
+            // Total Cost (Price - Profit)
+            const totalExp = price - profit;
+
+            S(prefix + '_EstWithdraw', estWithdraw);
+            S(prefix + '_PlatformFee', platformFee);
+            S(prefix + '_AdSpend', adSpend);
+            S(prefix + '_TotalCost', totalExp);
+        }
+
+        function calcScenarioPrice() {
+            const price = V('targetPriceInput');
+            const varCost = price * R_Total; 
+            const profit = price - varCost - Total_Fixed; 
+            
+            const profitEl = document.getElementById('res_Price_Profit');
+            profitEl.innerText = profit.toFixed(2);
+            profitEl.className = 'main-result-val ' + (profit >= 0 ? 'text-green' : 'text-red');
+
+            S('res_Price_Margin', price > 0 ? (profit/price) : 0, true);
+            updateDetails('res_Price', price, profit);
+        }
+
+        function calcScenarioMargin() {
+            const targetMargin = V('targetMarginInput') / 100;
+            const denominator = 1 - R_Total - targetMargin;
+            
+            if (denominator <= 0) {
+                document.getElementById('res_Margin_Price').innerText = "无法计算";
+                document.getElementById('res_Margin_Profit').innerText = "-";
+                return;
+            }
+            const price = Total_Fixed / denominator;
+            const profit = price * targetMargin;
+            S('res_Margin_Price', price);
+            S('res_Margin_Profit', profit);
+            updateDetails('res_Margin', price, profit);
+        }
+
+        function calcScenarioProfit() {
+            const targetProfit = V('targetProfitInput');
+            const denominator = 1 - R_Total;
+            if (denominator <= 0) {
+                document.getElementById('res_Profit_Price').innerText = "无法计算";
+                document.getElementById('res_Profit_Margin').innerText = "-";
+                return;
+            }
+            const price = (Total_Fixed + targetProfit) / denominator;
+            const margin = price > 0 ? (targetProfit / price) : 0;
+            S('res_Profit_Price', price);
+            S('res_Profit_Margin', margin, true);
+            updateDetails('res_Profit', price, targetProfit);
+        }
+
+        window.onload = function() {
+            loadParams();
+            parseDimensions();
+        };
+
+    </script>
+</body>
+</html>

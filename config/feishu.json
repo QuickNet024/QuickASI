@@ -1,0 +1,137 @@
+{
+  "module_id": "feishu",
+  "name": "飞书数据同步",
+  "description": "从飞书云表格同步产品数据和图片到本地缓存",
+  "sync": {
+    "thread_count": 4,
+    "rate_limit_per_sec": 5.0,
+    "batch_size": 5,
+    "retry_count": 3,
+    "retry_delay_sec": 1.0,
+    "request_timeout_sec": 30,
+    "sheet_exclude": [
+      "货盘公告",
+      "汇率"
+    ]
+  },
+  "image": {
+    "download_enabled": true,
+    "download_path": "data/image_cache",
+    "max_file_size_mb": 0,
+    "resize_enabled": true,
+    "target_width": 450,
+    "target_height": 600,
+    "incremental_mode": true,
+    "download_thread_count": 3,
+    "download_batch_size": 5,
+    "download_delay_sec": 0.2
+  },
+  "api": {
+    "base_url": "https://open.feishu.cn",
+    "app_id": "cli_a900afabcc38dcc7",
+    "app_secret": "HInGDbnLXtmW3U2MrADDmdsvbk7pRtGL",
+    "spreadsheet_token": "HUWasGeIXhWGXitg320cEg5snyc",
+    "token_refresh_margin_sec": 300
+  },
+  "column_mapping": {
+    "sku_code": {
+      "candidates": [
+        "sku-货号",
+        "sku",
+        "货号",
+        "sku_code"
+      ],
+      "type": "text"
+    },
+    "distribution_price": {
+      "candidates": [
+        "分销价格",
+        "分销价",
+        "价格",
+        "price",
+        "供货价",
+        "供货价格",
+        "成本价",
+        "采购价",
+        "成本"
+      ],
+      "type": "number"
+    },
+    "dimensions": {
+      "candidates": [
+        "长*宽*高(cm)",
+        "长×宽×高",
+        "尺寸",
+        "dimensions"
+      ],
+      "type": "text"
+    },
+    "weight": {
+      "candidates": [
+        "包装重量",
+        "重量",
+        "weight"
+      ],
+      "type": "number"
+    },
+    "category": {
+      "candidates": [
+        "类目",
+        "品类",
+        "category"
+      ],
+      "type": "text"
+    },
+    "chinese_name": {
+      "candidates": [
+        "中文名称",
+        "名称",
+        "name"
+      ],
+      "type": "text"
+    },
+    "brand": {
+      "candidates": [
+        "品牌",
+        "brand"
+      ],
+      "type": "text"
+    },
+    "inventory": {
+      "candidates": [
+        "库存数量",
+        "库存数",
+        "stock_qty"
+      ],
+      "type": "number"
+    },
+    "inventory_status": {
+      "candidates": [
+        "库存信息"
+      ],
+      "type": "text"
+    },
+    "supplier": {
+      "candidates": [
+        "产品编号",
+        "供应商编号",
+        "供应商"
+      ],
+      "type": "text"
+    },
+    "image": {
+      "candidates": [
+        "图片",
+        "image",
+        "产品图片"
+      ],
+      "type": "image"
+    }
+  },
+  "sync.thread_count": 4,
+  "image.download_path": "data/image_cache",
+  "sync.rate_limit_per_sec": 5.0,
+  "sync.request_timeout_sec": 30,
+  "image.incremental_mode": true,
+  "image.download_thread_count": 3
+}

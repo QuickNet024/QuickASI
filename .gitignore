@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Sisyphus / OpenCode
+.sisyphus/
+
+# Build artifacts
+*.spec
+*.exe
+
+# Sensitive / data files
+*.xlsx
+*.db
+!requirements.txt
+
+# Data cache
+data/image_cache/
+
+# Logs
+*.log
+
+# Screenshots (development artifacts)
+screenshot_*.png
+
+# Reference docs
+OpenCode-Skills-参考手册.md
