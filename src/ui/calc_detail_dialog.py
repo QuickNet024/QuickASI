@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """计算详情对话框 - 点击表格行时弹出显示所有中间计算值"""
 
 from PySide6.QtWidgets import (
@@ -44,7 +44,7 @@ class CalcDetailDialog(QDialog):
         if calc_result is None:
             no_data = QLabel("无计算数据（产品未匹配）")
             no_data.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            no_data.setStyleSheet("color: #999; padding: 20px; font-size: 14px;")
+            no_data.setProperty("class", "stat-label")
             layout.addWidget(no_data)
         else:
             # ── Section 2: 计算中间值 ──

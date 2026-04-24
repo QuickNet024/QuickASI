@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ExchangeRateService:
     def __init__(self, db: DatabaseManager = None):
-        self.db = db or DatabaseManager()
+        self.db = db or DatabaseManager(Config.DB_EXCHANGE_RATE_PATH, init_tables=["exchange_rates", "app_config"])
         self.api_key = Config.EXCHANGE_RATE_API_KEY
         self.api_url = Config.EXCHANGE_RATE_API_URL.format(key=self.api_key)
 

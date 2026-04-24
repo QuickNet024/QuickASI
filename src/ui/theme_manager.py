@@ -4,6 +4,7 @@
 import os
 import logging
 
+from src.config import Config
 from src.models.database import DatabaseManager
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class ThemeManager:
     def _ensure_loaded(self):
         if self._loaded:
             return
-        self._db = DatabaseManager()
+        self._db = DatabaseManager(Config.DB_APP_PATH, init_tables=["app_config"])
         try:
             saved = self._db.get_config("theme", "light")
             if saved in ("light", "dark"):
@@ -83,3 +84,4 @@ class ThemeManager:
     def reset_instance(cls):
         """重置单例（仅用于测试）"""
         cls._instance = None
+        cls._instance._loaded = False

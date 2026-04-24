@@ -2,8 +2,6 @@
 """数据接口面板 — 插件式卡片网格布局
 每个接口由 InterfaceModule 子类独立封装，通过 InterfaceRegistry 管理启用/禁用。
 SyncWidget 只负责布局和卡片容器的增删。
-
-保留 ApiSettingsDialog 和 DataCard 供向后兼容（测试可能引用）。
 """
 
 import logging
@@ -12,7 +10,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QCheckBox, QSizePolicy,
     QScrollArea, QFrame, QDialog, QDialogButtonBox,
-    QMessageBox, QLineEdit
+    QMessageBox
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -20,57 +18,9 @@ from src.models.database import DatabaseManager
 from src.ui.interfaces.base import InterfaceModule, ModuleSignals
 from src.ui.interfaces.registry import InterfaceRegistry
 from src.ui.interfaces.module_card import ModuleCard
+from src.ui.assets.icons import get_util_icon
 
 logger = logging.getLogger(__name__)
-
-
-# ═══ API 设置弹窗（保留供外部引用） ══════════════
-
-class ApiSettingsDialog(QDialog):
-    """通用 API 设置弹窗 — 向后兼容，推荐使用 api_settings_dialog 模块"""
-
-    def __init__(self, title, fields, db: DatabaseManager, parent=None):
-        super().__init__(parent)
-        # 延迟导入避免循环依赖
-        from src.ui.api_settings_dialog import ApiSettingsDialog as _RealDialog
-        self._real = _RealDialog(title, fields, db, parent)
-        self._real.setParent(self)
-
-    def exec_(self):
-        return self._real.exec()
-
-
-# ═══ 通用卡片容器（保留供向后兼容） ══════════════
-
-class DataCard(QWidget):
-    """旧版卡片容器 — 保留向后兼容"""
-
-    def __init__(self, title, parent=None):
-        super().__init__(parent)
-        self.setObjectName("dataCard")
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(16, 14, 16, 14)
-        outer.setSpacing(10)
-
-        self._title_label = QLabel(title)
-        self._title_label.setObjectName("cardTitle")
-        self._title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        outer.addWidget(self._title_label)
-
-        sep = QFrame()
-        sep.setFixedHeight(1)
-        sep.setObjectName("cardSep")
-        self._card_sep = sep
-        outer.addWidget(sep)
-
-        self._content = QVBoxLayout()
-        self._content.setSpacing(8)
-        outer.addLayout(self._content)
-
-    def set_theme(self, theme):
-        pass
 
 
 # ═══ 接口管理对话框 ══════════════════════════════
@@ -167,14 +117,16 @@ class SyncWidget(QWidget):
         scroll.setFrameShape(QFrame.NoFrame)
 
         self._grid_container = QWidget()
+        self._grid_container.setObjectName("syncGridContainer")
         self._grid_layout = QVBoxLayout(self._grid_container)
         self._grid_layout.setSpacing(16)
 
         # "管理接口" 按钮（放在网格底部）
-        self._btn_add = QPushButton("⚙ 管理接口")
+        self._btn_add = QPushButton(" 管理接口")
         self._btn_add.setObjectName("btnAddInterface")
         self._btn_add.setFixedHeight(40)
         self._btn_add.setProperty("class", "btn-icon")
+        self._btn_add.setIcon(get_util_icon("settings", 16))
         self._btn_add.clicked.connect(self._on_manage_interfaces)
 
         scroll.setWidget(self._grid_container)
@@ -263,7 +215,12 @@ class SyncWidget(QWidget):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._refresh_layout()
+        old_size = getattr(self, '_last_resize_size', None)
+        new_size = event.size()
+        # Only refresh if width changed significantly (more than CARD_MIN_WIDTH/2)
+        if old_size is None or abs(new_size.width() - old_size.width()) >= 100:
+            self._last_resize_size = new_size
+            self._refresh_layout()
 
     # ── 事件处理 ──────────────────────────────────
 
@@ -326,3 +283,12 @@ class SyncWidget(QWidget):
                 if content:
                     return content.isChecked()
         return False
+
+    def stop_all_workers(self):
+        """Stop all worker threads in module cards gracefully."""
+        for card in self._module_cards:
+            # Find the content widget inside the card
+            for child in card.findChildren(QWidget):
+                if hasattr(child, 'stop_worker'):
+                    child.stop_worker()
+                    break

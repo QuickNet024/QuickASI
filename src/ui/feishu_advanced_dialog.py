@@ -7,10 +7,10 @@ import os
 import logging
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QCheckBox,
+    QLabel, QCheckBox, QComboBox,
     QMessageBox,
     QGroupBox, QScrollArea, QFrame, QWidget, QProgressBar,
-    QGridLayout, QSizePolicy,
+    QGridLayout, QFormLayout, QSizePolicy,
     QSpinBox, QDoubleSpinBox, QLineEdit, QFileDialog,
     QTabWidget, QWidget as QTabWidgetPage
 )
@@ -18,6 +18,7 @@ from PySide6.QtCore import Qt, QThread, Signal
 
 from src.models.database import DatabaseManager
 from src.services.feishu_service import FeishuService, DEFAULT_COLUMN_MAP
+from src.ui.assets.icons import get_util_icon
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,23 @@ class FetchMetaWorker(QThread):
             self.error.emit(str(e))
 
 
-COL_TYPES = ["text", "number", "image", "skip"]
+COL_TYPES = [
+    ("text",      "文本"),
+    ("number",    "数字"),
+    ("image",     "图片"),
+    ("price_rub", "价格(RUB)"),
+    ("price_usd", "价格(USD)"),
+    ("price_cny", "价格(CNY)"),
+]
+
+# 用于自动检测列类型的关键词
+_TYPE_KEYWORDS = {
+    "price_rub": ["руб", "rub", "цена", "price_rub"],
+    "price_usd": ["usd", "$", "price_usd"],
+    "price_cny": ["cny", "yuan", "元", "rmb", "price_cny"],
+    "image":     ["图片", "image", "photo", "照片", "img", "图"],
+    "number":    ["数量", "库存", "inventory", "stock", "qty", "count"],
+}
 
 TARGET_FIELDS = [
     ("sku_code", "货号 (SKU)"),
@@ -70,6 +87,7 @@ class FeishuAdvancedDialog(QDialog):
         self.db = db
         self.setWindowTitle("飞书同步 — 高级设置")
         self.setMinimumSize(800, 700)
+        self.setMaximumSize(900, 800)
         self.resize(900, 750)
         self._sheet_headers = {}
         self._sheet_checks = {}
@@ -87,9 +105,10 @@ class FeishuAdvancedDialog(QDialog):
         top_row = QHBoxLayout()
         top_row.setSpacing(10)
 
-        self.btn_fetch = QPushButton("🔄 刷新结构")
+        self.btn_fetch = QPushButton(" 刷新结构")
         self.btn_fetch.setProperty("class", "btn-primary")
         self.btn_fetch.setMinimumHeight(36)
+        self.btn_fetch.setIcon(get_util_icon("refresh", 16))
         self.btn_fetch.clicked.connect(self._on_fetch)
         top_row.addWidget(self.btn_fetch)
 
@@ -145,15 +164,21 @@ class FeishuAdvancedDialog(QDialog):
 
         # 全选 / 取消全选
         sel_row = QHBoxLayout()
+        sel_row.setSpacing(4)
+
         self._btn_select_all = QPushButton("全选")
-        self._btn_select_all.setFixedHeight(28)
+        self._btn_select_all.setFixedSize(52, 22)
+        self._btn_select_all.setProperty("class", "mini-btn")
         self._btn_select_all.clicked.connect(self._on_select_all)
         sel_row.addWidget(self._btn_select_all)
 
         self._btn_deselect_all = QPushButton("取消全选")
-        self._btn_deselect_all.setFixedHeight(28)
+        self._btn_deselect_all.setFixedSize(64, 22)
+        self._btn_deselect_all.setProperty("class", "mini-btn")
         self._btn_deselect_all.clicked.connect(self._on_deselect_all)
         sel_row.addWidget(self._btn_deselect_all)
+
+        sel_row.addSpacing(8)
 
         self._lbl_sheet_count = QLabel("")
         self._lbl_sheet_count.setProperty("class", "stat-label")
@@ -179,7 +204,7 @@ class FeishuAdvancedDialog(QDialog):
         sheet_group_lay.addWidget(scroll)
 
         lay.addWidget(sheet_group)
-        self._tabs.addTab(page, "📄 Sheet 选择")
+        self._tabs.addTab(page, "Sheet 选择")
 
     # ═══ Tab 2: 列映射（简洁表单）════════════════
 
@@ -193,20 +218,25 @@ class FeishuAdvancedDialog(QDialog):
         hint.setProperty("class", "stat-label")
         hint.setWordWrap(True)
         lay.addWidget(hint)
+        lay.addSpacing(4)
 
         # 批量操作行
         batch_row = QHBoxLayout()
-        batch_row.setSpacing(6)
+        batch_row.setSpacing(4)
 
         btn_check_all = QPushButton("全选同步")
-        btn_check_all.setFixedHeight(26)
+        btn_check_all.setFixedSize(64, 22)
+        btn_check_all.setProperty("class", "mini-btn")
         btn_check_all.clicked.connect(lambda: self._batch_col_check(True))
         batch_row.addWidget(btn_check_all)
 
         btn_uncheck_all = QPushButton("取消全选")
-        btn_uncheck_all.setFixedHeight(26)
+        btn_uncheck_all.setFixedSize(64, 22)
+        btn_uncheck_all.setProperty("class", "mini-btn")
         btn_uncheck_all.clicked.connect(lambda: self._batch_col_check(False))
         batch_row.addWidget(btn_uncheck_all)
+
+        batch_row.addSpacing(8)
 
         self._lbl_col_count = QLabel("")
         self._lbl_col_count.setProperty("class", "stat-label")
@@ -214,28 +244,37 @@ class FeishuAdvancedDialog(QDialog):
         batch_row.addStretch()
         lay.addLayout(batch_row)
 
+        # 表头行与批量操作行之间留出间距
+        lay.addSpacing(8)
+
         # 表头行
         header_row = QHBoxLayout()
         header_row.setSpacing(8)
         lbl_sync_h = QLabel("同步")
         lbl_sync_h.setFixedWidth(44)
         lbl_sync_h.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_sync_h.setStyleSheet("font-weight: bold; color: #9CA3AF;")
+        lbl_sync_h.setProperty("class", "col-header")
         header_row.addWidget(lbl_sync_h)
 
         lbl_col_h = QLabel("飞书表头")
         lbl_col_h.setFixedWidth(160)
-        lbl_col_h.setStyleSheet("font-weight: bold; color: #9CA3AF;")
+        lbl_col_h.setProperty("class", "col-header")
         header_row.addWidget(lbl_col_h)
 
-        lbl_map_h = QLabel("映射名（可编辑）")
-        lbl_map_h.setStyleSheet("font-weight: bold; color: #9CA3AF;")
+        lbl_map_h = QLabel("映射名")
+        lbl_map_h.setMinimumWidth(80)
+        lbl_map_h.setProperty("class", "col-header")
         header_row.addWidget(lbl_map_h, stretch=1)
+
+        lbl_type_h = QLabel("类型")
+        lbl_type_h.setFixedWidth(100)
+        lbl_type_h.setProperty("class", "col-header")
+        header_row.addWidget(lbl_type_h)
         lay.addLayout(header_row)
 
         sep = QFrame()
         sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet("color: #374151;")
+        sep.setObjectName("colSep")
         lay.addWidget(sep)
 
         # 滚动区域
@@ -251,117 +290,150 @@ class FeishuAdvancedDialog(QDialog):
         lay.addWidget(self._col_scroll, stretch=1)
 
         self._col_rows = []
-        self._tabs.addTab(page, "🔗 列映射")
+        self._tabs.addTab(page, "列映射")
 
     # ═══ Tab 3: 同步参数（新增） ══════════════════
 
     def _build_sync_settings_tab(self):
         page = QWidget()
-        lay = QVBoxLayout(page)
-        lay.setSpacing(12)
+        # 用 QScrollArea 包裹，防止高 DPI 缩放时内容重叠
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
 
-        # ── 并行设置 ──
+        container = QWidget()
+        lay = QVBoxLayout(container)
+        lay.setSpacing(16)
+        lay.setContentsMargins(4, 4, 4, 4)
+
+        # ── 并行与限流 ──
         parallel_group = QGroupBox("并行与限流")
-        p_lay = QVBoxLayout(parallel_group)
-        p_lay.setContentsMargins(14, 20, 14, 14)
-        p_lay.setSpacing(10)
+        p_form = QFormLayout(parallel_group)
+        p_form.setContentsMargins(20, 24, 20, 16)
+        p_form.setSpacing(14)
+        p_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        p_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        # 线程数
-        row_threads = QHBoxLayout()
-        row_threads.addWidget(QLabel("数据同步线程数:"))
         self._spin_threads = QSpinBox()
         self._spin_threads.setRange(1, 16)
         self._spin_threads.setValue(4)
+        self._spin_threads.setFixedWidth(100)
         self._spin_threads.setToolTip("并行读取 Sheet 数据的线程数量")
-        row_threads.addWidget(self._spin_threads)
-        row_threads.addStretch()
-        p_lay.addLayout(row_threads)
+        p_form.addRow("数据同步线程数:", self._spin_threads)
 
-        # 限流 QPS
-        row_rate = QHBoxLayout()
-        row_rate.addWidget(QLabel("API 限流 (请求/秒):"))
         self._spin_rate_limit = QDoubleSpinBox()
         self._spin_rate_limit.setRange(0.5, 50.0)
         self._spin_rate_limit.setValue(5.0)
         self._spin_rate_limit.setSingleStep(0.5)
         self._spin_rate_limit.setDecimals(1)
+        self._spin_rate_limit.setFixedWidth(100)
         self._spin_rate_limit.setToolTip("飞书 API 默认限流: 5 QPS")
-        row_rate.addWidget(self._spin_rate_limit)
-        row_rate.addWidget(QLabel("(飞书默认: 5)"))
-        row_rate.addStretch()
-        p_lay.addLayout(row_rate)
+        rate_row = QHBoxLayout()
+        rate_row.setSpacing(8)
+        rate_row.addWidget(self._spin_rate_limit)
+        rate_row.addWidget(QLabel("(飞书默认: 5)"))
+        rate_row.addStretch()
+        p_form.addRow("API 限流 (请求/秒):", rate_row)
 
-        # 请求超时
-        row_timeout = QHBoxLayout()
-        row_timeout.addWidget(QLabel("请求超时 (秒):"))
         self._spin_timeout = QSpinBox()
         self._spin_timeout.setRange(5, 120)
         self._spin_timeout.setValue(30)
-        row_timeout.addWidget(self._spin_timeout)
-        row_timeout.addStretch()
-        p_lay.addLayout(row_timeout)
+        self._spin_timeout.setFixedWidth(100)
+        p_form.addRow("请求超时 (秒):", self._spin_timeout)
 
-        # 重试次数
-        row_retry = QHBoxLayout()
-        row_retry.addWidget(QLabel("失败重试次数:"))
         self._spin_retry = QSpinBox()
         self._spin_retry.setRange(0, 10)
         self._spin_retry.setValue(3)
-        row_retry.addWidget(self._spin_retry)
-        row_retry.addStretch()
-        p_lay.addLayout(row_retry)
+        self._spin_retry.setFixedWidth(100)
+        p_form.addRow("失败重试次数:", self._spin_retry)
 
         lay.addWidget(parallel_group)
 
-        # ── 图片设置 ──
+        # ── 图片同步 ──
         image_group = QGroupBox("图片同步")
-        i_lay = QVBoxLayout(image_group)
-        i_lay.setContentsMargins(14, 20, 14, 14)
-        i_lay.setSpacing(10)
+        i_form = QFormLayout(image_group)
+        i_form.setContentsMargins(20, 24, 20, 16)
+        i_form.setSpacing(14)
+        i_form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        i_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
 
-        # 图片缓存路径
-        row_path = QHBoxLayout()
-        row_path.addWidget(QLabel("图片缓存目录:"))
+        path_row = QHBoxLayout()
+        path_row.setSpacing(8)
         self._edit_image_dir = QLineEdit("data/image_cache")
         self._edit_image_dir.setMinimumWidth(200)
         self._edit_image_dir.setToolTip("图片保存的本地目录（支持相对路径和绝对路径）")
-        row_path.addWidget(self._edit_image_dir, stretch=1)
-
+        path_row.addWidget(self._edit_image_dir, stretch=1)
         btn_browse = QPushButton("浏览...")
-        btn_browse.setFixedWidth(70)
+        btn_browse.setMinimumWidth(70)
         btn_browse.clicked.connect(self._on_browse_image_dir)
-        row_path.addWidget(btn_browse)
-        i_lay.addLayout(row_path)
+        path_row.addWidget(btn_browse)
+        i_form.addRow("图片缓存目录:", path_row)
 
-        # 增量模式
-        self._check_incremental = QCheckBox("启用增量图片同步（仅下载新增/变更图片）")
-        self._check_incremental.setChecked(True)
-        self._check_incremental.setToolTip("对比本地文件和远程 token，跳过未变更的图片")
-        i_lay.addWidget(self._check_incremental)
-
-        # 图片下载线程数
-        row_img_threads = QHBoxLayout()
-        row_img_threads.addWidget(QLabel("图片下载线程数:"))
         self._spin_img_threads = QSpinBox()
         self._spin_img_threads.setRange(1, 8)
         self._spin_img_threads.setValue(3)
+        self._spin_img_threads.setFixedWidth(100)
         self._spin_img_threads.setToolTip("并行下载图片的线程数量")
-        row_img_threads.addWidget(self._spin_img_threads)
-        row_img_threads.addStretch()
-        i_lay.addLayout(row_img_threads)
+        i_form.addRow("图片下载线程数:", self._spin_img_threads)
 
-        # 说明
-        hint = QLabel("💡 图片同步无大小限制，所有图片都会自动缩放保存")
-        hint.setProperty("class", "stat-label")
-        hint.setWordWrap(True)
-        i_lay.addWidget(hint)
+        self._check_incremental = QCheckBox("启用增量图片同步（仅下载新增/变更图片）")
+        self._check_incremental.setChecked(True)
+        self._check_incremental.setToolTip("对比本地文件和远程 token，跳过未变更的图片")
+        i_form.addRow("", self._check_incremental)
+
+        hint_img = QLabel("图片同步无大小限制，所有图片都会自动缩放保存")
+        hint_img.setProperty("class", "stat-label")
+        hint_img.setWordWrap(True)
+        i_form.addRow("", hint_img)
 
         lay.addWidget(image_group)
+
+        # ── 调试日志 ──
+        debug_group = QGroupBox("调试日志")
+        d_lay = QVBoxLayout(debug_group)
+        d_lay.setContentsMargins(20, 24, 20, 16)
+        d_lay.setSpacing(12)
+
+        self._check_debug_window = QCheckBox("启用调试日志窗口（独立窗口显示同步日志）")
+        self._check_debug_window.setToolTip("打开后，同步时会在独立窗口实时显示详细日志")
+        d_lay.addWidget(self._check_debug_window)
+
+        self._check_file_log = QCheckBox("记录日志到文件（data/logs/ 目录）")
+        self._check_file_log.setToolTip("日志文件按天分割，如 feishu_sync_2026-04-24.log")
+        d_lay.addWidget(self._check_file_log)
+
+        btn_show_debug = QPushButton("打开调试窗口")
+        btn_show_debug.setMinimumHeight(34)
+        btn_show_debug.setMinimumWidth(120)
+        btn_show_debug.clicked.connect(self._on_show_debug_window)
+        d_lay.addWidget(btn_show_debug)
+
+        hint_dbg = QLabel("调试模式用于开发诊断，可查看完整的 API 请求/响应和数据解析过程")
+        hint_dbg.setProperty("class", "stat-label")
+        hint_dbg.setWordWrap(True)
+        d_lay.addWidget(hint_dbg)
+
+        lay.addWidget(debug_group)
+
         lay.addStretch()
 
-        self._tabs.addTab(page, "⚙ 同步参数")
+        scroll.setWidget(container)
+        page_lay = QVBoxLayout(page)
+        page_lay.setContentsMargins(0, 0, 0, 0)
+        page_lay.addWidget(scroll)
+
+        self._tabs.addTab(page, "同步参数")
 
     # ═══ 加载当前设置 ═══════════════════════════
+
+    def _on_show_debug_window(self):
+        """打开调试日志窗口"""
+        from src.ui.debug_log_window import DebugLogManager
+        mgr = DebugLogManager()
+        # 自动启用调试输出
+        self._check_debug_window.setChecked(True)
+        mgr.enable_debug_window(True)
+        mgr.show_window()
 
     def _load_current_settings(self):
         """从配置文件加载当前同步参数"""
@@ -375,6 +447,12 @@ class FeishuAdvancedDialog(QDialog):
         self._edit_image_dir.setText(settings.get("image_dir", "data/image_cache"))
         self._check_incremental.setChecked(settings.get("image_incremental", True))
         self._spin_img_threads.setValue(settings.get("image_dl_threads", 3))
+
+        # 加载调试设置 — 从 DB 持久化读取
+        self._check_debug_window.setChecked(
+            self.db.get_config("debug_window_enabled", "0") == "1")
+        self._check_file_log.setChecked(
+            self.db.get_config("debug_file_enabled", "0") == "1")
 
     # ═══ 自动载入上次保存的配置 ═══════════════════
 
@@ -460,7 +538,7 @@ class FeishuAdvancedDialog(QDialog):
 
     def _on_fetch_done(self, sheet_headers: dict):
         self.btn_fetch.setEnabled(True)
-        self.btn_fetch.setText("🔄 刷新结构")
+        self.btn_fetch.setText(" 刷新结构")
         self._sheet_headers = sheet_headers
         self.lbl_status.setText(f"已刷新 {len(sheet_headers)} 个 Sheet 页")
 
@@ -498,7 +576,7 @@ class FeishuAdvancedDialog(QDialog):
 
     def _on_fetch_error(self, err):
         self.btn_fetch.setEnabled(True)
-        self.btn_fetch.setText("🔄 刷新结构")
+        self.btn_fetch.setText(" 刷新结构")
         self.lbl_status.setText("刷新失败")
         QMessageBox.warning(self, "刷新失败",
             f"无法读取飞书表格结构，请先检查 API 设置是否正确：\n{err}")
@@ -531,13 +609,15 @@ class FeishuAdvancedDialog(QDialog):
                 if header_name:
                     header_to_field[header_name] = (field, info.get("type", "text"))
 
-        # 构建 col_mapping 中 header → mapped_name 的查找
+        # 构建 col_mapping 中 header → mapped_name 和 type 的查找
         saved_map_names = {}
+        saved_types = {}
         if col_mapping:
             for field, info in col_mapping.items():
                 h = info.get("header", "")
                 if h:
                     saved_map_names[h.lower()] = info.get("mapped_name", h)
+                    saved_types[h.lower()] = info.get("type", "text")
 
         insert_idx = self._col_layout.count() - 1  # before stretch
 
@@ -547,10 +627,10 @@ class FeishuAdvancedDialog(QDialog):
 
             # 行容器
             row_widget = QWidget()
-            row_widget.setMinimumHeight(36)
-            row_widget.setMaximumHeight(40)
+            row_widget.setMinimumHeight(44)
+            row_widget.setMaximumHeight(48)
             row_h = QHBoxLayout(row_widget)
-            row_h.setContentsMargins(4, 1, 4, 1)
+            row_h.setContentsMargins(4, 4, 4, 4)
             row_h.setSpacing(8)
 
             # 复选框：同步/不同步
@@ -574,6 +654,21 @@ class FeishuAdvancedDialog(QDialog):
             edit_name.setPlaceholderText(header)
             row_h.addWidget(edit_name, stretch=1)
 
+            # 类型下拉选择
+            combo_type = QComboBox()
+            for type_key, type_label in COL_TYPES:
+                combo_type.addItem(type_label, type_key)
+            combo_type.setFixedWidth(100)
+            combo_type.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            # 确定默认类型：优先保存的 > 自动检测 > text
+            default_type = saved_types.get(header_lower)
+            if not default_type:
+                default_type = self._detect_col_type(header_lower, matched)
+            type_idx = combo_type.findData(default_type)
+            if type_idx >= 0:
+                combo_type.setCurrentIndex(type_idx)
+            row_h.addWidget(combo_type)
+
             self._col_layout.insertWidget(insert_idx, row_widget)
             insert_idx += 1
 
@@ -581,12 +676,29 @@ class FeishuAdvancedDialog(QDialog):
                 "header": header,
                 "checkbox": cb_sync,
                 "edit_name": edit_name,
+                "type_combo": combo_type,
                 "matched_field": matched[0] if matched else None,
-                "matched_type": matched[1] if matched else "text",
                 "widget": row_widget,
             })
 
         self._update_col_count()
+
+    # ═══ 列类型自动检测 ═══════════════════════════
+
+    @staticmethod
+    def _detect_col_type(header_lower: str, matched=None) -> str:
+        """根据表头名称自动检测列类型"""
+        # 先看 DEFAULT_COLUMN_MAP 匹配结果
+        if matched:
+            mt = matched[1]
+            if mt in ("number", "image"):
+                return mt
+        # 关键词匹配
+        for type_key, keywords in _TYPE_KEYWORDS.items():
+            for kw in keywords:
+                if kw in header_lower:
+                    return type_key
+        return "text"
 
     # ═══ 列映射批量操作 ═══════════════════════════
 
@@ -619,9 +731,9 @@ class FeishuAdvancedDialog(QDialog):
                 continue  # 跳过未勾选的列
             header_name = row_data["header"]
             mapped_name = row_data["edit_name"].text().strip() or header_name
+            col_type = row_data["type_combo"].currentData()
             # 自动匹配内部字段名
             field = row_data["matched_field"] or header_name
-            col_type = row_data["matched_type"] or "text"
             col_mapping[field] = {
                 "header": header_name,
                 "mapped_name": mapped_name,
@@ -652,6 +764,17 @@ class FeishuAdvancedDialog(QDialog):
 
         # 保存同步参数到配置文件
         svc.update_sync_settings(sync_settings)
+
+        # 4. 调试日志设置 — 持久化到 DB
+        debug_window = self._check_debug_window.isChecked()
+        debug_file = self._check_file_log.isChecked()
+        self.db.save_config("debug_window_enabled", "1" if debug_window else "0")
+        self.db.save_config("debug_file_enabled", "1" if debug_file else "0")
+
+        from src.ui.debug_log_window import DebugLogManager
+        mgr = DebugLogManager()
+        mgr.enable_debug_window(debug_window)
+        mgr.enable_file_logging(debug_file)
 
         # 构建结果摘要
         summary_lines = [

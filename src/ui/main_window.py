@@ -14,11 +14,10 @@ from PySide6.QtCore import Qt, QThread, Signal
 
 from src.config import Config
 from src.models.database import DatabaseManager
-from src.services.calculator import LossCalculator, CalculationParams
 from src.services.excel_service import ExcelService
-from src.services.matcher import ProductMatcher
-from src.services.commission_svc import CommissionService
+from src.services.discount_calc_svc import DiscountCalcService
 from src.services.exchange_rate import ExchangeRateService
+from src.services.shipping_service import ShippingService
 
 from src.ui.sidebar import SideBar
 from src.ui.top_bar import TopBar
@@ -27,6 +26,8 @@ from src.ui.data_viewers import ProductViewer, CommissionViewer
 from src.ui.discount_calc_widget import DiscountCalcWidget
 from src.ui.settings_dialog import SettingsDialog
 from src.ui.theme_manager import ThemeManager
+from src.ui.interfaces.registry import InterfaceRegistry
+from src.services.calculator import LossCalculator
 from src.version import get_app_version, get_version_text
 
 logger = logging.getLogger(__name__)
@@ -39,122 +40,26 @@ PAGE_DISCOUNT_CALC = 3
 PAGE_SETTINGS = 4
 
 
-class CalculateWorker(QThread):
-    """后台计算线程"""
-    progress = Signal(int, int)      # current, total
-    finished = Signal(list)           # results list
+class _CalculateWorker(QThread):
+    """Step 2 worker: Calculate profit/discount from matched results."""
+    finished = Signal(int)
     error = Signal(str)
 
-    def __init__(self, rows, params_dict, db: DatabaseManager,
-                  strategy: str, mode: str, cny_to_rub: float):
+    def __init__(self, svc, params_dict, exchange_rate):
         super().__init__()
-        self.rows = rows
+        self.svc = svc
         self.params_dict = params_dict
-        self.db = db
-        self.strategy = strategy
-        self.mode = mode
-        self.cny_to_rub = cny_to_rub
+        self.exchange_rate = exchange_rate
 
     def run(self):
         try:
-            params = CalculationParams(**self.params_dict)
-            calc = LossCalculator(params)
-            matcher = ProductMatcher(self.db)
-            comm_svc = CommissionService(self.db)
-
-            results = []
-            total = len(self.rows)
-
-            for i, row in enumerate(self.rows):
-                self.progress.emit(i + 1, total)
-                result = self._calc_row(calc, matcher, comm_svc, row)
-                results.append(result)
-
-            self.finished.emit(results)
+            count = self.svc.calculate_from_match(self.params_dict, self.exchange_rate)
+            if not self.isInterruptionRequested():
+                self.finished.emit(count)
         except Exception as e:
-            logger.exception("CalculateWorker error")
-            self.error.emit(str(e))
-
-    def _calc_row(self, calc, matcher, comm_svc, row):
-        """计算单行"""
-        try:
-            current_price = float(str(row.current_price).replace(",", "").strip())
-        except (ValueError, TypeError):
-            return self._empty_row(row, "价格无效")
-
-        product = matcher.match_product(row.seller_sku)
-        if not product:
-            return self._empty_row(row, "产品未匹配")
-
-        product_cost = product.distribution_price
-        # 分销价格来自飞书，已是RUB，无需转换。
-
-        category = product.category or row.category
-        comm_rate, matched, source = comm_svc.find_commission_rate(category)
-
-        params = CalculationParams(**self.params_dict)
-        params.commission_rate = comm_rate
-        calc_instance = LossCalculator(params)
-
-        l, w, h = LossCalculator.parse_dimensions(product.dimensions or "")
-        if l == 0 and w == 0 and h == 0:
-            l, w, h = 30, 20, 10
-
-        discount = row.current_discount or 0
-        discounted_price = current_price * (1 - discount / 100) if discount else current_price
-
-        calc_result = calc_instance.calc_full_result(
-            discounted_price, product_cost, l, w, h
-        )
-
-        _COMMISSION_SOURCE_MAP = {
-            "product": "商品级",
-            "category": "品类级",
-            "default": "未匹配(默认30%)",
-        }
-
-        return {
-            "seller_sku": row.seller_sku,
-            "category": product.category or row.category,
-            "current_price": current_price,
-            "current_discount": discount,
-            "discounted_price": round(discounted_price, 2),
-            "product_cost": round(product_cost, 2),
-            "commission_rate": comm_rate,
-            "breakeven": round(calc_result.breakeven, 2),
-            "profit": round(calc_result.current_profit, 2),
-            "max_discount": calc_result.max_discount,
-            "min_price": round(calc_result.min_price, 2),
-            "cost_matched": True,
-            "distribution_price": round(product_cost, 2),
-            "shipping_fee": round(calc_result.shipping_fee, 2),
-            "commission_source": _COMMISSION_SOURCE_MAP.get(source, source),
-            "inventory": product.inventory,
-            "row_number": row.row_number,
-            "_calc_result": calc_result,
-        }
-
-    def _empty_row(self, row, reason):
-        return {
-            "seller_sku": row.seller_sku,
-            "category": row.category,
-            "current_price": row.current_price,
-            "current_discount": row.current_discount or 0,
-            "discounted_price": None,
-            "product_cost": None,
-            "commission_rate": None,
-            "breakeven": None,
-            "profit": None,
-            "max_discount": None,
-            "min_price": None,
-            "cost_matched": False,
-            "distribution_price": None,
-            "shipping_fee": None,
-            "commission_source": None,
-            "inventory": None,
-            "row_number": row.row_number,
-            "_calc_result": None,
-        }
+            if not self.isInterruptionRequested():
+                logger.exception("_CalculateWorker error")
+                self.error.emit(str(e))
 
 
 class MainWindow(QMainWindow):
@@ -166,8 +71,24 @@ class MainWindow(QMainWindow):
         self.resize(1400, 900)
         self.setMinimumSize(960, 600)
 
-        # 数据库
-        self.db = DatabaseManager()
+        # 数据库 — 按模块独立
+        self._app_db = DatabaseManager(Config.DB_APP_PATH, init_tables=["app_config"])
+        self._feishu_db = DatabaseManager(Config.DB_FEISHU_PATH, init_tables=["products", "app_config"])
+        self._commission_db = DatabaseManager(Config.DB_COMMISSION_PATH, init_tables=["commissions", "commission_meta", "app_config"])
+        self._exchange_rate_db = DatabaseManager(Config.DB_EXCHANGE_RATE_PATH, init_tables=["exchange_rates", "app_config"])
+        self._discount_calc_db = DatabaseManager(Config.DB_DISCOUNT_CALC_PATH,
+                                                  init_tables=["import_rows", "calc_results", "app_config"])
+
+        # 运费服务
+        self._shipping_svc = ShippingService()
+
+        # 折扣推算服务 (连接所有需要的DB + 运费服务)
+        self._discount_svc = DiscountCalcService(
+            db=self._discount_calc_db,
+            feishu_db=self._feishu_db,
+            commission_db=self._commission_db,
+            shipping_svc=self._shipping_svc,
+        )
 
         # 参数
         self._params = self._load_params()
@@ -180,10 +101,54 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._build_statusbar()
 
+    def closeEvent(self, event):
+        """Clean up all workers and force application exit."""
+        logger.info("MainWindow closing...")
+
+        # 1. Stop CalcWorker (owned by MainWindow)
+        if self._calc_worker and self._calc_worker.isRunning():
+            self._calc_worker.requestInterruption()
+            self._calc_worker.quit()
+            self._calc_worker.wait(3000)
+            if self._calc_worker.isRunning():
+                self._calc_worker.terminate()
+                self._calc_worker.wait(1000)
+
+        # 2. Stop all interface module workers (feishu, commission, exchange_rate)
+        try:
+            self.sync_widget.stop_all_workers()
+        except Exception:
+            pass
+
+        # 3. Shutdown debug log manager completely (closes window + removes handlers)
+        try:
+            from src.ui.debug_log_window import DebugLogManager
+            mgr = DebugLogManager()
+            if mgr:
+                mgr.shutdown()
+        except Exception:
+            pass
+
+        # 4. Close ALL top-level windows (not just visible ones)
+        app = QApplication.instance()
+        if app:
+            for widget in app.topLevelWidgets():
+                if widget is not self:
+                    try:
+                        widget.close()
+                    except Exception:
+                        pass
+
+        # 5. Force quit the application
+        if app:
+            app.quit()
+
+        event.accept()
+
     def _load_params(self) -> dict:
         params = dict(Config.DEFAULT_PARAMS)
         try:
-            saved = self.db.get_all_config()
+            saved = self._app_db.get_all_config()
             for key in params:
                 if key in saved:
                     try:
@@ -196,7 +161,7 @@ class MainWindow(QMainWindow):
 
     def _save_params(self):
         for key, value in self._params.items():
-            self.db.save_config(key, str(value))
+            self._app_db.save_config(key, str(value))
 
     def _build_ui(self):
         central = QWidget()
@@ -219,22 +184,23 @@ class MainWindow(QMainWindow):
         # QStackedWidget — 5 pages
         self.stack = QStackedWidget()
 
-        # Page 0: SyncWidget
-        self.sync_widget = SyncWidget(self.db)
+        # Page 0: SyncWidget（传入 app_db 用于接口启用/禁用状态管理）
+        self.sync_widget = SyncWidget(self._app_db)
         self.sync_widget.sync_finished.connect(self._on_sync_finished)
         self.stack.addWidget(self.sync_widget)
 
-        # Page 1: ProductViewer
-        self.product_viewer = ProductViewer(self.db)
+        # Page 1: ProductViewer（读取飞书DB的产品数据）
+        self.product_viewer = ProductViewer(self._feishu_db)
         self.stack.addWidget(self.product_viewer)
 
-        # Page 2: CommissionViewer
-        self.commission_viewer = CommissionViewer(self.db)
+        # Page 2: CommissionViewer（读取佣金DB的佣金数据）
+        self.commission_viewer = CommissionViewer(self._commission_db)
         self.stack.addWidget(self.commission_viewer)
 
-        # Page 3: DiscountCalcWidget (策略+模式+文件+计算+结果+导出)
+        # Page 3: DiscountCalcWidget (佣金表+策略+文件导入+计算+结果+导出)
         self.discount_calc = DiscountCalcWidget()
-        self.discount_calc.calculate_requested.connect(self._on_calculate)
+        self.discount_calc.set_service(self._discount_svc)
+        self.discount_calc.calculate_requested.connect(self._on_calculate_requested)
         self.discount_calc.export_requested.connect(self._on_export)
         self.discount_calc.result_table.cellClicked.connect(self._on_row_clicked)
         self.stack.addWidget(self.discount_calc)
@@ -262,6 +228,19 @@ class MainWindow(QMainWindow):
         self.top_bar.refresh_theme(_init_theme)
         self.sync_widget.set_theme(_init_theme)
 
+        # ── 根据模块启用状态控制导航可见性 ──
+        self._update_nav_visibility()
+
+    def _update_nav_visibility(self):
+        """根据模块启用状态控制导航项可见性"""
+        try:
+            registry = InterfaceRegistry()
+            # 产品数据页(PAGE_PRODUCTS=1) 依赖飞书模块
+            feishu_enabled = registry.is_enabled(self._app_db, "feishu")
+            self.sidebar.set_nav_visible(PAGE_PRODUCTS, feishu_enabled)
+        except Exception:
+            pass
+
     def _build_statusbar(self):
         self.statusbar = QStatusBar()
         self.setStatusBar(self.statusbar)
@@ -277,7 +256,7 @@ class MainWindow(QMainWindow):
 
         # 右下角版本号
         version_label = QLabel(get_app_version())
-        version_label.setStyleSheet("color: #80868B; font-size: 11px; padding-right: 8px;")
+        version_label.setProperty("class", "stat-label")
         self.statusbar.addPermanentWidget(version_label)
 
     # ── Navigation ────────────────────────────
@@ -289,6 +268,8 @@ class MainWindow(QMainWindow):
                 self.product_viewer.load_data()
             elif index == PAGE_COMMISSIONS and not self.commission_viewer._loaded:
                 self.commission_viewer.load_data()
+            elif index == PAGE_DISCOUNT_CALC:
+                pass  # Commission tables loaded in import dialog
         except Exception as e:
             logger.error(f"Failed to load page {index}: {e}")
             self.status_label.setText(f"加载页面失败: {e}")
@@ -315,6 +296,12 @@ class MainWindow(QMainWindow):
             self.sidebar.refresh_theme(theme)
             self.top_bar.refresh_theme(theme)
             self.sync_widget.set_theme(theme)
+            # 通知 debug 日志窗口
+            try:
+                from src.ui.debug_log_window import DebugLogManager
+                DebugLogManager().set_theme(theme == "dark")
+            except Exception:
+                pass
             self.status_label.setText(f"已切换至{'深色' if theme == 'dark' else '浅色'}主题")
         except Exception as e:
             logger.error(f"Theme toggle failed: {e}")
@@ -329,69 +316,268 @@ class MainWindow(QMainWindow):
 
     # ── Calculate ─────────────────────────────
 
-    def _on_calculate(self, file_path: str, strategy: str, mode: str):
+    def _on_calculate_requested(self):
+        """Dispatch to match or calculate based on current state."""
         if self._calc_worker and self._calc_worker.isRunning():
             return
 
+        if self._discount_calc_db.get_import_row_count() == 0:
+            QMessageBox.information(self, "提示", "请先导入Excel文件")
+            return
+
+        if not self.discount_calc.is_matched():
+            self._on_match()
+        else:
+            self._on_calculate()
+
+    def _on_match(self):
+        """Step 1: Match SKU + commission + calculate shipping."""
+        commission_table = self.discount_calc.get_commission_table()
         try:
-            svc = ExcelService()
-            rows = svc.read_template(file_path)
-            self.discount_calc.set_rows(rows)
+            count = self._discount_svc.match(commission_table)
+            self.discount_calc.set_match_result(count)
+            # Populate match tab
+            combined = self._discount_svc.get_import_data()
+            match_data = self._build_match_display(combined)
+            self.discount_calc.match_table.populate(match_data)
+            self.discount_calc.tabs.setCurrentIndex(1)  # Switch to match data tab
+            self.status_label.setText(f"匹配完成: {count} 条")
         except Exception as e:
-            QMessageBox.warning(self, "读取失败", f"无法读取Excel:\n{e}")
-            return
+            logger.exception("Match error")
+            QMessageBox.warning(self, "匹配失败", str(e))
+            self.discount_calc.set_match_result(0)
+            self.status_label.setText("匹配失败")
 
-        if not rows:
-            QMessageBox.information(self, "提示", "Excel文件中没有数据行")
-            return
-
-        cny_to_rub = 0.0
-        if mode == DiscountCalcWidget.MODE_CROSS_BORDER:
-            ex_svc = ExchangeRateService(self.db)
-            cny_to_rub = ex_svc.get_cny_to_rub()
-            if cny_to_rub <= 0:
-                QMessageBox.warning(self, "提示",
-                    "跨境模式需要汇率数据，请先同步汇率")
-                return
-
+    def _on_calculate(self):
+        """Step 2: Calculate profit/discount from matched results."""
+        rate = self.discount_calc.get_exchange_rate()
         self._calc_results = []
         self.discount_calc.result_table.clear_results()
-        self.progress_bar.setVisible(True)
-        self.progress_bar.setRange(0, len(rows))
-        self.progress_bar.setValue(0)
-        self.status_label.setText(f"正在计算 {len(rows)} 行...")
+        self.status_label.setText("正在计算...")
 
-        self._calc_worker = CalculateWorker(
-            rows, self._params, self.db, strategy, mode, cny_to_rub
-        )
-        self._calc_worker.progress.connect(self._on_calc_progress)
+        self._calc_worker = _CalculateWorker(
+            self._discount_svc, self._params, rate)
         self._calc_worker.finished.connect(self._on_calc_done)
         self._calc_worker.error.connect(self._on_calc_error)
         self._calc_worker.start()
 
-    def _on_calc_progress(self, current, total):
-        self.progress_bar.setValue(current)
-        self.status_label.setText(f"计算中 {current}/{total}...")
+    def _on_calc_done(self, count):
+        self.discount_calc.progress.setVisible(False)
 
-    def _on_calc_done(self, results):
+        # Load results from DB and display
+        combined = self._discount_svc.get_import_data()
+        results = self._build_display_results(combined)
         self._calc_results = results
         self.discount_calc.result_table.load_results(results)
-        self.progress_bar.setVisible(False)
 
-        profit = sum(1 for r in results if r.get("profit") is not None and r["profit"] > 0)
-        loss = sum(1 for r in results if r.get("profit") is not None and r["profit"] < 0)
-        unmatched = sum(1 for r in results if r.get("profit") is None)
+        # Populate match and calc tables
+        match_data = self._build_match_display(combined)
+        calc_data = self._build_calc_display(combined)
+        self.discount_calc.match_table.populate(match_data)
+        self.discount_calc.calc_table.populate(calc_data)
 
-        self.discount_calc.set_export_enabled(True)
-        self.discount_calc.update_summary(profit, loss, unmatched, len(results))
+        summary = self._discount_svc.get_summary()
+        self.discount_calc.update_summary(summary)
+        self.discount_calc.set_export_enabled(count > 0)
+        self.discount_calc.tabs.setCurrentIndex(3)  # Switch to 结果数据 tab
         self.status_label.setText(
-            f"计算完成: 盈利{profit} / 亏损{loss} / 未匹配{unmatched} / 总计{len(results)}"
+            f"计算完成: 盈利{summary['profit']} / 亏损{summary['loss']} / "
+            f"未匹配{summary['unmatched']} / 总计{summary['total']}"
         )
 
     def _on_calc_error(self, err):
-        self.progress_bar.setVisible(False)
+        self.discount_calc.progress.setVisible(False)
         self.status_label.setText("计算失败")
         QMessageBox.warning(self, "计算失败", f"计算过程出错:\n{err}")
+
+    def _build_display_results(self, combined_data) -> list:
+        """Convert (import_row, calc_result) tuples to display dicts for ResultTable.
+
+        DB column indices (verified against CREATE TABLE):
+        import_rows: (0=id, 1=row_number, 2=brand, 3=category, 4=wb_article,
+                      5=seller_sku, 6=barcode, 7=wb_stock, 8=seller_stock,
+                      9=turnover, 10=current_price, 11=new_price,
+                      12=current_discount, 13=new_discount, 14=import_batch)
+        calc_results: (0=id, 1=import_row_id, 2=sku_matched, 3=category_matched,
+                        4=matched_product_id, 5=product_cost, 6=product_category,
+                        7=dimensions, 8=weight,
+                        9=inventory, 10=inventory_status,
+                        11=seller_stock, 12=wb_stock,
+                        13=commission_rate, 14=commission_source,
+                        15=discounted_price, 16=shipping_fee,
+                        17=breakeven, 18=profit, 19=max_discount, 20=min_price,
+                        21=target_discount, 22=target_price,
+                        23=calc_batch)
+        """
+        results = []
+        for imp, calc in combined_data:
+            if calc is None:
+                results.append({
+                    "seller_sku": imp[5] or "",
+                    "category": imp[3] or "",
+                    "current_price": imp[10] or "",
+                    "current_discount": imp[12] or 0,
+                    "discounted_price": None,
+                    "distribution_price": None,
+                    "shipping_fee": None,
+                    "seller_stock": str(imp[8] or ""),
+                    "wb_stock": str(imp[7] or ""),
+                    "inventory_status": "",
+                    "cost_matched": False,
+                    "commission_source": "未计算",
+                    "product_cost": None,
+                    "commission_rate": None,
+                    "breakeven": None,
+                    "profit": None,
+                    "max_discount": None,
+                    "target_discount": None,
+                    "min_price": None,
+                    "target_price": None,
+                    "row_number": imp[1] or 0,
+                    "_calc_result": None,
+                })
+            else:
+                sku_ok = bool(calc[2])   # sku_matched
+                cat_ok = bool(calc[3])   # category_matched
+                # Build commission_source with both match statuses
+                if not sku_ok:
+                    comm_src = "产品未匹配"
+                else:
+                    comm_src = calc[14] or ""  # commission_source
+                    if cat_ok:
+                        comm_src += " ✅"
+                    else:
+                        comm_src = "❌类目 " + comm_src
+
+                results.append({
+                    "seller_sku": imp[5] or "",
+                    "category": calc[6] or imp[3] or "",  # product_category or raw category
+                    "current_price": imp[10] or "",
+                    "current_discount": imp[12] or 0,
+                    "discounted_price": calc[15],  # discounted_price
+                    "distribution_price": calc[5],  # product_cost
+                    "shipping_fee": calc[16],       # shipping_fee
+                    "seller_stock": calc[11] or str(imp[8] or ""),  # seller_stock from calc or import
+                    "wb_stock": calc[12] or str(imp[7] or ""),      # wb_stock from calc or import
+                    "inventory_status": calc[10],    # inventory_status
+                    "cost_matched": sku_ok,
+                    "category_matched": cat_ok,
+                    "commission_source": comm_src,
+                    "product_cost": calc[5],        # product_cost
+                    "commission_rate": calc[13],    # commission_rate
+                    "breakeven": calc[17],          # breakeven
+                    "profit": calc[18],             # profit
+                    "max_discount": calc[19],       # max_discount
+                    "target_discount": calc[21],    # target_discount
+                    "min_price": calc[20],          # min_price
+                    "target_price": calc[22],       # target_price
+                    "row_number": imp[1] or 0,
+                    "_calc_result": None,
+                })
+        return results
+
+    def _build_match_display(self, combined_data) -> list:
+        """Build display data for MatchDataTable.
+
+        Extracts matching intermediate results: SKU match, commission match,
+        inventory status, product cost, volume, etc.
+        """
+        results = []
+        for imp, calc in combined_data:
+            if calc is None:
+                results.append({
+                    "row_number": imp[1] or 0,
+                    "seller_sku": imp[5] or "",
+                    "category": imp[3] or "",
+                    "sku_matched": False,
+                    "matched_product_id": "-",
+                    "product_category": "-",
+                    "dimensions": "-",
+                    "wb_stock": str(imp[7] or ""),
+                    "seller_stock": str(imp[8] or ""),
+                    "inventory_status": "-",
+                    "commission_rate": None,
+                    "category_matched": False,
+                    "product_cost": None,
+                    "density": None,
+                    "weight": None,
+                })
+            else:
+                sku_ok = bool(calc[2])   # sku_matched
+                cat_ok = bool(calc[3])   # category_matched
+                dim_str = calc[7] or ""   # dimensions
+                # Calculate density from dimensions and weight
+                weight_kg = calc[8]  # weight from calc_results (may be None)
+                volume_l = None
+                if dim_str and dim_str != "-":
+                    try:
+                        l, w, h = LossCalculator.parse_dimensions(str(dim_str))
+                        if l and w and h:
+                            volume_l = l * w * h / 1000
+                    except Exception:
+                        pass
+                # Density = weight_kg / volume_l
+                density = None
+                if weight_kg and weight_kg > 0 and volume_l and volume_l > 0:
+                    density = weight_kg / volume_l
+
+                results.append({
+                    "row_number": imp[1] or 0,
+                    "seller_sku": imp[5] or "",
+                    "category": calc[6] or imp[3] or "",
+                    "sku_matched": sku_ok,
+                    "matched_product_id": calc[4] or "-",
+                    "product_category": calc[6] or "-",
+                    "dimensions": dim_str or "-",
+                    "wb_stock": str(imp[7] or ""),
+                    "seller_stock": str(imp[8] or ""),
+                    "inventory_status": calc[10] or "-",
+                    "commission_rate": calc[13],
+                    "category_matched": cat_ok,
+                    "product_cost": calc[5],
+                    "density": density,
+                    "weight": weight_kg,
+                })
+        return results
+
+    def _build_calc_display(self, combined_data) -> list:
+        """Build display data for CalcDataTable.
+
+        Extracts detailed calculation breakdown: prices, fees, breakeven, profit, etc.
+        """
+        results = []
+        for imp, calc in combined_data:
+            if calc is None:
+                results.append({
+                    "row_number": imp[1] or 0,
+                    "seller_sku": imp[5] or "",
+                    "current_price": imp[10] or "",
+                    "discounted_price": None,
+                    "product_cost": None,
+                    "shipping_fee": None,
+                    "breakeven": None,
+                    "profit": None,
+                    "max_discount": None,
+                    "target_discount": None,
+                    "min_price": None,
+                    "target_price": None,
+                })
+            else:
+                results.append({
+                    "row_number": imp[1] or 0,
+                    "seller_sku": imp[5] or "",
+                    "current_price": imp[10] or "",
+                    "discounted_price": calc[15],   # discounted_price
+                    "product_cost": calc[5],        # product_cost
+                    "shipping_fee": calc[16],       # shipping_fee
+                    "breakeven": calc[17],          # breakeven
+                    "profit": calc[18],             # profit
+                    "max_discount": calc[19],       # max_discount
+                    "target_discount": calc[21],    # target_discount
+                    "min_price": calc[20],          # min_price
+                    "target_price": calc[22],       # target_price
+                })
+        return results
 
     # ── Row click detail ──────────────────────
 
@@ -404,13 +590,14 @@ class MainWindow(QMainWindow):
     # ── Export ────────────────────────────────
 
     def _on_export(self):
-        if not self._calc_results:
+        combined = self._discount_svc.get_import_data()
+        if not combined or all(calc is None for _, calc in combined):
             QMessageBox.information(self, "提示", "没有可导出的结果")
             return
 
         file_path = self.discount_calc.get_file_path()
         if not file_path:
-            QMessageBox.information(self, "提示", "请先选择并计算Excel文件")
+            QMessageBox.information(self, "提示", "请先导入并计算Excel文件")
             return
 
         save_path, _ = QFileDialog.getSaveFileName(
@@ -426,25 +613,25 @@ class MainWindow(QMainWindow):
             discount_updates = {}
             price_updates = {}
 
-            for r in self._calc_results:
-                row_num = r.get("row_number")
+            for imp, calc in combined:
+                if calc is None:
+                    continue
+                row_num = imp[1]  # row_number
                 if not row_num:
                     continue
-                calc = r.get("_calc_result")
-                if not calc:
-                    continue
-
-                profit = r.get("profit", 0)
+                profit = calc[18]  # profit
                 if profit is None:
                     continue
+                max_discount = calc[19]  # max_discount
+                min_price = calc[20]    # min_price
 
                 if strategy in (DiscountCalcWidget.STRATEGY_DISCOUNT_ONLY, DiscountCalcWidget.STRATEGY_BOTH):
-                    if profit < 0 and calc.max_discount is not None:
-                        discount_updates[row_num] = calc.max_discount
+                    if profit < 0 and max_discount is not None:
+                        discount_updates[row_num] = max_discount
 
                 if strategy in (DiscountCalcWidget.STRATEGY_PRICE_ONLY, DiscountCalcWidget.STRATEGY_BOTH):
-                    if profit < 0 and calc.min_price is not None:
-                        price_updates[row_num] = calc.min_price
+                    if profit < 0 and min_price is not None:
+                        price_updates[row_num] = min_price
 
             svc = ExcelService()
             svc.write_updates(file_path, save_path, discount_updates, price_updates)

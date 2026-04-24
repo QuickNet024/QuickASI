@@ -1,72 +1,55 @@
-﻿# -*- coding: utf-8 -*-
-"""结果表格组件 - QTableWidget 带颜色标记 + 右键筛选 + 点击排序"""
-
-from typing import Optional
+# -*- coding: utf-8 -*-
+"""匹配数据表格组件 — 显示中间匹配结果（SKU匹配、佣金匹配、库存状态等）"""
 
 from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QMenu
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QAction, QActionGroup
 
-from src.services.excel_service import ProductRow
-
-
-# 颜色常量
-COLOR_PROFIT = QColor(230, 247, 230)    # #e6f7e6
-COLOR_LOSS = QColor(255, 230, 230)      # #ffe6e6
-COLOR_UNMATCHED = QColor(255, 230, 230) # #ffe6e6 (浅红色)
+# 行背景颜色
 COLOR_ROW_NO_SKU = QColor("#ffe6e6")      # 浅红色 — 未匹配SKU
 COLOR_ROW_NO_CATEGORY = QColor("#fff3e0")  # 浅橘黄色 — 未匹配类目
-COLOR_HEADER_BG = QColor(0, 21, 41)     # #001529
-COLOR_HEADER_FG = QColor(255, 255, 255)
 
-# 库存状态颜色 (matching ProductViewer)
+# 库存状态颜色 (matching ProductViewer / result_table)
 _STOCK_STATUS_COLORS = {
-    "货源充足": ("#e6f7e6", "#1a7a1a"),   # light green bg, dark green fg
-    "停止上架": ("#ffe6e6", "#c91a2a"),   # light red bg, dark red fg
-    "货源紧缺": ("#fff3cd", "#856404"),   # light yellow bg, dark yellow fg
-    "等待补货": ("#ffe8cc", "#b35900"),   # light orange bg, dark orange fg
+    "货源充足": ("#e6f7e6", "#1a7a1a"),
+    "停止上架": ("#ffe6e6", "#c91a2a"),
+    "货源紧缺": ("#fff3cd", "#856404"),
+    "等待补货": ("#ffe8cc", "#b35900"),
 }
 
 # 列定义: (key, title, width)
 COLUMNS = [
+    ("row_number", "行号", 50),
     ("seller_sku", "卖家货号", 150),
     ("category", "类目", 80),
-    ("current_price", "当前价格", 80),
-    ("current_discount", "当前折扣", 70),
-    ("discounted_price", "折后价格", 80),
-    ("distribution_price", "分销价格", 90),
-    ("shipping_fee", "运费", 70),
+    ("sku_matched", "SKU匹配", 70),
+    ("matched_product_id", "匹配产品ID", 100),
+    ("product_category", "产品类目", 100),
+    ("dimensions", "尺寸", 100),
+    ("wb_stock", "WB库存", 70),
     ("seller_stock", "卖家库存", 70),
-    ("wb_stock", "平台库存", 70),
     ("inventory_status", "库存状态", 90),
-    ("cost_matched", "SKU匹配状态", 90),
-    ("commission_source", "佣金匹配状态", 130),
+    ("commission_rate", "佣金率", 70),
+    ("category_matched", "类目匹配", 70),
     ("product_cost", "产品成本", 80),
-    ("commission_rate", "佣金率", 60),
-    ("breakeven", "盈亏平衡", 80),
-    ("profit", "盈亏额", 80),
-    ("max_discount", "保本折扣", 70),
-    ("target_discount", "目标折扣", 70),
-    ("min_price", "保本价格", 80),
-    ("target_price", "目标价格", 80),
+    ("density", "密度(kg/L)", 90),
+    ("weight", "包装重量(kg)", 100),
 ]
 
 
-class ResultTable(QTableWidget):
-    """结果表格 - 颜色标记盈亏 + 右键筛选 + 点击排序"""
+class MatchDataTable(QTableWidget):
+    """匹配数据表格 — 显示SKU匹配、佣金匹配、库存等中间结果"""
 
     def __init__(self, parent=None):
         super().__init__(0, len(COLUMNS), parent)
         self._setup_headers()
-        self._results = []
+        self._raw_display_data = []
 
         # 筛选/排序状态
         self._sort_col = -1
         self._sort_order = Qt.SortOrder.AscendingOrder
-        self._col_filters = {}   # col_idx → set(allowed_values)
-        self._raw_display_data = []  # list of display dicts
+        self._col_filters = {}
 
-        # Header setup for sort and filter
         header = self.horizontalHeader()
         header.setSectionsClickable(True)
         header.setSortIndicatorShown(True)
@@ -81,28 +64,27 @@ class ResultTable(QTableWidget):
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         header.setStretchLastSection(True)
-        # header and grid styles handled by QSS (#resultTable)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
-        self.setSelectionBehavior(QTableWidget.SelectRows)
-        self.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.setShowGrid(True)
 
-    def load_results(self, results: list):
-        """Load calculation results into the table.
-        Each result is a dict with keys matching COLUMNS."""
-        self._raw_display_data = results  # Store for filtering
+    def populate(self, data: list):
+        """Load match display data into the table.
+
+        Each item is a dict with keys matching COLUMNS.
+        """
+        self._raw_display_data = data
         self._apply_filters_and_populate()
 
     def _filtered_data(self) -> list:
         data = list(self._raw_display_data)
-        # Apply column filters
         for col_idx, allowed_values in self._col_filters.items():
             if not allowed_values or col_idx >= len(COLUMNS):
                 continue
             key = COLUMNS[col_idx][0]
             data = [d for d in data if str(d.get(key, "")).strip() in allowed_values]
-        # Apply sort
         if 0 <= self._sort_col < len(COLUMNS):
             key = COLUMNS[self._sort_col][0]
             reverse = self._sort_order == Qt.SortOrder.DescendingOrder
@@ -119,27 +101,74 @@ class ResultTable(QTableWidget):
         data = self._filtered_data()
         self.setRowCount(len(data))
         for row_idx, row_data in enumerate(data):
-            cost_matched = row_data.get("cost_matched", False)
-            row_color = self._row_color(cost_matched, row_data.get("profit"), row_data.get("category_matched"))
+            # Determine row background color based on match status
+            sku_ok = row_data.get("sku_matched", True)
+            cat_ok = row_data.get("category_matched", True)
+            if not sku_ok:
+                row_bg = COLOR_ROW_NO_SKU
+            elif not cat_ok:
+                row_bg = COLOR_ROW_NO_CATEGORY
+            else:
+                row_bg = None
+
             for col_idx, (key, _, _) in enumerate(COLUMNS):
                 val = row_data.get(key, "")
                 item = QTableWidgetItem(self._format_value(key, val))
                 item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if row_color:
-                    item.setBackground(row_color)
-                # Profit text color
-                if key == "profit" and isinstance(val, (int, float)):
-                    if val > 0:
-                        item.setForeground(QColor(56, 158, 13))
-                    elif val < 0:
-                        item.setForeground(QColor(207, 19, 34))
-                # Inventory status background color
+                # Apply row background first
+                if row_bg:
+                    item.setBackground(row_bg)
+                # Inventory status cell color overrides row color
                 if key == "inventory_status" and val:
                     colors = _STOCK_STATUS_COLORS.get(str(val))
                     if colors:
                         item.setBackground(QColor(colors[0]))
                         item.setForeground(QColor(colors[1]))
                 self.setItem(row_idx, col_idx, item)
+
+    def _format_value(self, key, val):
+        if val is None:
+            return "-"
+        # Boolean fields
+        if key in ("sku_matched", "category_matched"):
+            if val is True:
+                return "✅"
+            if val is False:
+                return "❌"
+            return str(val)
+        # Inventory status
+        if key == "inventory_status":
+            return str(val) if val else "-"
+        # Commission rate
+        if key == "commission_rate":
+            try:
+                return f"{int(float(val))}%"
+            except (ValueError, TypeError):
+                return str(val) if val else "-"
+        # Product cost
+        if key == "product_cost":
+            try:
+                return f"{float(val):.2f}"
+            except (ValueError, TypeError):
+                return str(val) if val else "-"
+        # Density field
+        if key == "density":
+            try:
+                val_f = float(val)
+                return f"{val_f:.3f}" if val_f > 0 else "-"
+            except (ValueError, TypeError):
+                return str(val) if val else "-"
+        # Weight field
+        if key == "weight":
+            try:
+                val_f = float(val)
+                return f"{val_f:.3f}" if val_f > 0 else "-"
+            except (ValueError, TypeError):
+                return str(val) if val else "-"
+        # Stock fields (from import data)
+        if key in ("wb_stock", "seller_stock"):
+            return str(val) if val else "-"
+        return str(val) if val is not None and val != "" else "-"
 
     def _on_header_clicked(self, col_idx: int):
         if col_idx == 0:
@@ -210,80 +239,8 @@ class ResultTable(QTableWidget):
             self._col_filters.pop(col_idx, None)
             self._apply_filters_and_populate()
 
-    def clear_all_filters(self):
-        self._col_filters.clear()
-        self._sort_col = -1
-        header = self.horizontalHeader()
-        if header.isSortIndicatorShown():
-            header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
-        self._apply_filters_and_populate()
-
-    def _row_color(self, cost_matched: bool, profit, category_matched=None) -> Optional[QColor]:
-        """Get row background color based on match status and profit."""
-        if not cost_matched:
-            return COLOR_ROW_NO_SKU
-        if category_matched is not None and not category_matched:
-            return COLOR_ROW_NO_CATEGORY
-        # Existing profit/loss logic
-        if isinstance(profit, (int, float)):
-            if profit > 0:
-                return COLOR_PROFIT
-            elif profit < 0:
-                return COLOR_LOSS
-        return None
-
-    def _format_value(self, key, val):
-        if val is None:
-            return "-"
-        if key in ("seller_stock", "wb_stock"):
-            return str(val) if val else "-"
-        if key == "inventory_status":
-            return str(val) if val else "-"
-        # cost_matched: bool → ✅ / ❌
-        if key == "cost_matched":
-            return "✅" if val else "❌"
-        # distribution_price: float → .2f format
-        if key == "distribution_price":
-            try:
-                return f"{float(val):.2f}"
-            except (ValueError, TypeError):
-                return "-"
-        # commission_source: already a Chinese string
-        if key == "commission_source":
-            return str(val) if val else "-"
-        # target_discount: integer percent
-        if key == "target_discount":
-            try:
-                return f"{int(float(val))}%"
-            except (ValueError, TypeError):
-                return "-"
-        # target_price: float .2f
-        if key == "target_price":
-            try:
-                return f"{float(val):.2f}"
-            except (ValueError, TypeError):
-                return "-"
-        # existing formatting for other columns
-        if key in ("current_price", "discounted_price", "product_cost", "shipping_fee",
-                    "breakeven", "profit", "min_price"):
-            try:
-                return f"{float(val):.2f}"
-            except (ValueError, TypeError):
-                return str(val) if val else "-"
-        if key in ("current_discount", "max_discount", "commission_rate"):
-            try:
-                v = int(float(val))
-                return f"{v}%"
-            except (ValueError, TypeError):
-                return str(val) if val else "-"
-        return str(val) if val else "-"
-
-    def get_results(self):
-        return self._results
-
-    def clear_results(self):
+    def clear_data(self):
         self.setRowCount(0)
-        self._results = []
         self._raw_display_data = []
         self._col_filters.clear()
         self._sort_col = -1

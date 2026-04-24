@@ -9,6 +9,7 @@ from src.ui.interfaces.module_card import ModuleCard
 from src.ui.interfaces.feishu_module import FeishuModule
 from src.ui.interfaces.commission_module import CommissionModule
 from src.ui.interfaces.exchange_rate_module import ExchangeRateModule
+from src.ui.interfaces.shipping_module import ShippingModule
 
 __all__ = [
     "InterfaceModule",
@@ -17,4 +18,5 @@ __all__ = [
     "FeishuModule",
     "CommissionModule",
     "ExchangeRateModule",
+    "ShippingModule",
 ]

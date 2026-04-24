@@ -77,6 +77,11 @@ class _RateLimiter:
         self._min_interval = 1.0 / self._rate
 
 
+class SyncAbortException(Exception):
+    """同步被用户取消或遇到致命错误，应立即停止"""
+    pass
+
+
 class FeishuService:
     """飞书云表数据同步服务 V2 — 独立封装，可被多程序调用
 
@@ -84,7 +89,7 @@ class FeishuService:
     """
 
     def __init__(self, db: DatabaseManager = None):
-        self.db = db or DatabaseManager()
+        self.db = db or DatabaseManager(Config.DB_FEISHU_PATH, init_tables=["products", "app_config"])
 
         # 加载配置：DB > 文件 > 默认值
         self._iconfig = InterfaceConfig("feishu", db=self.db)
@@ -115,6 +120,9 @@ class FeishuService:
         # API 限流器
         self._limiter = _RateLimiter(self._rate_limit)
         self._token = None
+        self._abort = False   # 同步中止标记
+        self._consecutive_failures = 0  # 连续失败计数
+        self._max_consecutive_failures = 5  # 连续失败阈值，超过后停止
 
     # ═══ 配置访问接口 ═══════════════════════════
 
@@ -264,22 +272,37 @@ class FeishuService:
             (总产品数, 已同步sheet列表)
         """
         config = self.get_sync_config()
+        logger.info("========== 开始飞书数据同步 ==========")
+        logger.debug(f"同步配置: included_sheets={config.get('included_sheets')}, "
+                     f"excluded_sheets={config.get('excluded_sheets')}, "
+                     f"column_mapping字段数={len(config.get('column_mapping', {}))}")
+
+        # 重置中止状态
+        self._abort = False
+        self._consecutive_failures = 0
+
         self.get_tenant_token()
         sheets = self.get_all_sheets()
+        logger.info(f"获取到 {len(sheets)} 个 Sheet 页")
 
         active_sheets = []
         for s in sheets:
             title = s.get("title", "")
             if not self._should_sync_sheet(title, config):
+                logger.debug(f"跳过 Sheet: {title}（不在同步范围）")
                 continue
             sheet_id = s.get("sheet_id", "")
             grid = s.get("grid_properties", {})
+            rows_in_sheet = grid.get("row_count", "?")
+            logger.debug(f"待同步 Sheet: {title} (sheet_id={sheet_id}, rows={rows_in_sheet})")
             active_sheets.append((sheet_id, title, grid))
 
         if not active_sheets:
+            logger.warning("没有可同步的 Sheet 页")
             return 0, []
 
         col_map = self._get_effective_column_map(config)
+        logger.debug(f"使用列映射: {list(col_map.keys())}")
 
         # ── 阶段1: 尝试批量获取（单次 API 调用） ──
         ranges = []
@@ -287,26 +310,32 @@ class FeishuService:
             row_count = grid.get("row_count", 10000)
             ranges.append(f"{sheet_id}!A1:ZZ{row_count}")
 
+        logger.info(f"阶段1: 批量获取 {len(ranges)} 个 Range")
+
         value_ranges = None
         try:
             value_ranges = self._raw_batch_get_ranges(ranges)
+            logger.info(f"批量获取成功，返回 {len(value_ranges)} 个 valueRange")
         except Exception as e:
-            logger.warning(f"Batch read failed ({e}), falling back to parallel individual reads")
+            logger.warning(f"批量获取失败 ({e})，降级为逐个读取")
 
         if value_ranges is not None:
-            # 批量成功 — 并行解析 + 写入
             total, synced_sheets = self._parallel_parse_and_save(
                 active_sheets, value_ranges, col_map, progress_cb)
         else:
-            # 批量失败 — 并行逐个读取
             total, synced_sheets = self._parallel_fetch_and_save(
                 active_sheets, col_map, progress_cb)
 
         # ── 阶段2: 图片同步（多线程增量） ──
         if sync_images:
+            logger.info("阶段2: 开始图片同步")
             self._sync_images_parallel(active_sheets,
                                        value_ranges if value_ranges else [],
                                        col_map, progress_cb)
+        else:
+            logger.debug("跳过图片同步（未启用）")
+
+        logger.info(f"========== 同步完成: {total} 条产品, {len(synced_sheets)} 个Sheet ==========")
 
         return total, synced_sheets
 
@@ -333,6 +362,7 @@ class FeishuService:
                         self.db.insert_products_batch(products)
                         total += len(products)
                         synced_sheets.append(title)
+                        logger.debug(f"Sheet '{title}' 解析完成: {len(products)} 条产品")
                         if progress_cb:
                             progress_cb(len(synced_sheets), sheet_count, f"已解析: {title}")
                 except Exception as e:
@@ -603,12 +633,17 @@ class FeishuService:
         return self._parse_rows_with_map(headers, rows, sheet_name, DEFAULT_COLUMN_MAP)
 
     def _parse_rows_with_map(self, headers: List, rows: List[List], sheet_name: str, col_map: dict) -> List[Product]:
-        """使用列映射配置解析行数据"""
+        """使用列映射配置解析行数据 — 同时存完整原始行到 raw_sync_data"""
+        import json as _json
         h = [str(col).strip().lower() for col in headers]
+        original_headers = [str(col).strip() for col in headers]  # 保留原始大小写
 
         sku_idx = self._find_col_by_map(h, col_map, "sku_code")
         if sku_idx is None:
+            logger.debug(f"Sheet '{sheet_name}': 未找到 SKU 列，跳过 (headers={original_headers[:5]}...)")
             return []
+
+        logger.debug(f"Sheet '{sheet_name}': 找到 SKU 列 idx={sku_idx}, 开始解析 {len(rows)} 行数据")
 
         price_idx = self._find_col_by_map(h, col_map, "distribution_price")
         dim_idx = self._find_col_by_map(h, col_map, "dimensions")
@@ -620,6 +655,13 @@ class FeishuService:
         inv_status_idx = self._find_col_by_map(h, col_map, "inventory_status")
         supplier_idx = self._find_col_by_map(h, col_map, "supplier")
         img_col_idx = self._find_col_by_map(h, col_map, "image")
+
+        # 预计算：只存 column_mapping 中配置过的列（排除 _skip）
+        allowed_headers_lower = set()
+        for field, info in col_map.items():
+            h_name = info.get("header", "")
+            if h_name and info.get("type", "") != "_skip" and field != "_skip":
+                allowed_headers_lower.add(h_name.lower())
 
         products = []
         now = datetime.now()
@@ -634,10 +676,26 @@ class FeishuService:
                     val = row[img_col_idx]
                     if isinstance(val, dict) and val.get("type") == "embed-image":
                         img_token = val.get("fileToken", "")
-                if not img_token and brand_idx is not None and brand_idx < len(row):
-                    val = row[brand_idx]
+
+                # 构建 raw_sync_data：只存配置过的列
+                raw_data = {}
+                for ci, val in enumerate(row):
+                    if ci >= len(original_headers):
+                        break
+                    header_name = original_headers[ci]
+                    # 跳过空表头和 "None"
+                    if not header_name or header_name == "None":
+                        continue
+                    # 只存 column_mapping 中配置过的列
+                    if header_name.lower() not in allowed_headers_lower:
+                        continue
+                    # 图片类型存 file_token
                     if isinstance(val, dict) and val.get("type") == "embed-image":
-                        img_token = val.get("fileToken", "")
+                        raw_data[header_name] = val.get("fileToken", "")
+                    elif val is None:
+                        raw_data[header_name] = ""
+                    else:
+                        raw_data[header_name] = val
 
                 products.append(Product(
                     sku_code=sku,
@@ -656,6 +714,7 @@ class FeishuService:
                     original_price=0.0,
                     supplier=self._safe_str(row, supplier_idx),
                     remarks="",
+                    raw_sync_data=_json.dumps(raw_data, ensure_ascii=False),
                 ))
             except Exception:
                 continue
@@ -742,9 +801,14 @@ class FeishuService:
     # ═══ 低级 API 调用（带限流和重试） ═════════
 
     def _raw_get_range(self, range_str: str) -> List[List]:
-        """Low-level range fetch with rate limiting and retry."""
+        """Low-level range fetch with rate limiting, retry, and failure-stop."""
+        if self._abort:
+            raise SyncAbortException("同步已被中止")
+
         last_err = None
         for attempt in range(self._retry_count):
+            if self._abort:
+                raise SyncAbortException("同步已被中止")
             try:
                 self._limiter.wait()
                 token = self._token or self.get_tenant_token()
@@ -759,11 +823,22 @@ class FeishuService:
                 data = resp.json()
                 if data.get("code") != 0:
                     raise Exception(f"Get sheet data failed: {data.get('msg')}")
+                # 成功 → 重置连续失败计数
+                self._consecutive_failures = 0
                 return data.get("data", {}).get("valueRange", {}).get("values", [])
+            except SyncAbortException:
+                raise
             except Exception as e:
                 last_err = e
+                self._consecutive_failures += 1
+                logger.warning(f"Retry {attempt+1}/{self._retry_count} for range {range_str}: {e}")
+                # 连续失败超过阈值 → 立即停止，不再重试
+                if self._consecutive_failures >= self._max_consecutive_failures:
+                    logger.error(f"连续 {self._consecutive_failures} 次请求失败，停止同步")
+                    self._abort = True
+                    raise SyncAbortException(
+                        f"连续 {self._consecutive_failures} 次请求失败，已停止同步。最后错误: {e}")
                 if attempt < self._retry_count - 1:
-                    logger.warning(f"Retry {attempt+1}/{self._retry_count} for range {range_str}: {e}")
                     time.sleep(self._retry_delay)
         raise last_err  # type: ignore[misc]
 

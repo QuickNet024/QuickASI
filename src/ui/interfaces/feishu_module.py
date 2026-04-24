@@ -9,11 +9,12 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 
 from src.models.database import DatabaseManager
-from src.services.feishu_service import FeishuService
+from src.services.feishu_service import FeishuService, SyncAbortException
 from src.config import Config
 from src.ui.interfaces.base import InterfaceModule, ModuleSignals
 from src.ui.interfaces.registry import InterfaceRegistry
 from src.ui.api_settings_dialog import ApiSettingsDialog
+from src.ui.assets.icons import get_util_icon
 
 
 # ═══ Worker ═══════════════════════════════════
@@ -24,16 +25,22 @@ class FeishuSyncWorker(QThread):
 
     def __init__(self, db, sync_images=False):
         super().__init__()
-        self.db = db
+        # db is app_db; create module-specific DB for product operations
+        self._feishu_db = DatabaseManager(Config.DB_FEISHU_PATH, init_tables=["products", "app_config"])
         self.sync_images = sync_images
 
     def run(self):
         try:
-            svc = FeishuService(self.db)
+            svc = FeishuService(self._feishu_db)
             count, sheets = svc.sync_all_products(sync_images=self.sync_images)
-            self.finished.emit(count, sheets)
+            if not self.isInterruptionRequested():
+                self.finished.emit(count, sheets)
+        except SyncAbortException as e:
+            if not self.isInterruptionRequested():
+                self.error.emit(f"同步已自动停止: {e}")
         except Exception as e:
-            self.error.emit(str(e))
+            if not self.isInterruptionRequested():
+                self.error.emit(str(e))
 
 
 # ═══ 同步选项对话框 ═══════════════════════════
@@ -52,7 +59,6 @@ class _SyncOptionsDialog(QDialog):
         layout.setSpacing(16)
 
         hint = QLabel("准备从飞书同步产品数据")
-        hint.setStyleSheet("font-size: 13px;")
         layout.addWidget(hint)
 
         self._check_images = QCheckBox("同步产品图片（首次较慢）")
@@ -86,7 +92,7 @@ class FeishuModule(InterfaceModule):
 
     @property
     def icon_text(self) -> str:
-        return "📊"
+        return ""
 
     def create_widget(self, db, signals: ModuleSignals = None) -> QWidget:
         return _FeishuWidget(db, signals)
@@ -97,11 +103,13 @@ class _FeishuWidget(QWidget):
 
     def __init__(self, db: DatabaseManager, signals: ModuleSignals = None):
         super().__init__()
-        self.db = db
+        # db is app_db for registry; create module-specific DB
+        self.db = DatabaseManager(Config.DB_FEISHU_PATH, init_tables=["products", "app_config"])
         self._signals = signals
         self._worker = None
         self._build_ui()
         self._refresh_status()
+        self._restore_debug_settings()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -148,8 +156,9 @@ class _FeishuWidget(QWidget):
         self.btn_settings.clicked.connect(self._on_settings)
         btn_row.addWidget(self.btn_settings)
 
-        self.btn_advanced = QPushButton("⚙ 高级设置")
+        self.btn_advanced = QPushButton(" 高级设置")
         self.btn_advanced.setFixedHeight(30)
+        self.btn_advanced.setIcon(get_util_icon("settings", 14))
         self.btn_advanced.clicked.connect(self._on_advanced)
         btn_row.addWidget(self.btn_advanced)
 
@@ -162,14 +171,22 @@ class _FeishuWidget(QWidget):
         layout.addWidget(self.progress)
 
     def _on_sync(self):
+        # 如果正在同步 → 取消
         if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.quit()
+            self._worker.wait(3000)
+            self._on_cancel()
             return
+
         dlg = _SyncOptionsDialog(self)
         if dlg.exec() != QDialog.Accepted:
             return
         sync_images = dlg.should_sync_images()
-        self.btn_sync.setEnabled(False)
-        self.btn_sync.setText("同步中...")
+        self.btn_sync.setText("取消同步")
+        self.btn_sync.setProperty("class", "btn-danger")
+        self.btn_sync.style().unpolish(self.btn_sync)
+        self.btn_sync.style().polish(self.btn_sync)
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
         if self._signals:
@@ -179,21 +196,32 @@ class _FeishuWidget(QWidget):
         self._worker.error.connect(self._on_error)
         self._worker.start()
 
-    def _on_done(self, count, sheets):
-        self.btn_sync.setEnabled(True)
+    def _reset_sync_button(self):
+        """恢复同步按钮为初始状态"""
         self.btn_sync.setText("同步数据")
+        self.btn_sync.setProperty("class", "btn-primary")
+        self.btn_sync.style().unpolish(self.btn_sync)
+        self.btn_sync.style().polish(self.btn_sync)
         self.progress.setVisible(False)
+
+    def _on_done(self, count, sheets):
+        self._reset_sync_button()
         self._refresh_status()
         if self._signals:
             self._signals.sync_finished.emit()
             self._signals.stats_changed.emit()
 
     def _on_error(self, err):
-        self.btn_sync.setEnabled(True)
-        self.btn_sync.setText("同步数据")
-        self.progress.setVisible(False)
+        self._reset_sync_button()
         self.lbl_count.setText("同步失败")
         QMessageBox.warning(self, "飞书同步失败", err)
+
+    def _on_cancel(self):
+        """用户手动取消同步"""
+        self._reset_sync_button()
+        self.lbl_count.setText("已取消")
+        if self._signals:
+            self._signals.sync_finished.emit()
 
     def _on_settings(self):
         ApiSettingsDialog("飞书 API 设置", [
@@ -215,6 +243,25 @@ class _FeishuWidget(QWidget):
             self.lbl_sync_time.setText(f"上次同步: {last_time}")
         else:
             self.lbl_sync_time.setText("暂未同步")
+
+    def _restore_debug_settings(self):
+        """应用启动时，从 DB 恢复调试日志设置"""
+        from src.ui.debug_log_window import DebugLogManager
+        mgr = DebugLogManager()
+        if self.db.get_config("debug_window_enabled", "0") == "1":
+            mgr.enable_debug_window(True)
+        if self.db.get_config("debug_file_enabled", "0") == "1":
+            mgr.enable_file_logging(True)
+
+    def stop_worker(self):
+        """Stop the worker thread gracefully."""
+        if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.quit()
+            self._worker.wait(3000)
+            if self._worker.isRunning():
+                self._worker.terminate()
+                self._worker.wait(1000)
 
 
 # 自动注册

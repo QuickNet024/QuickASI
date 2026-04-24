@@ -2,14 +2,16 @@
 """
 WB亏损计算系统 - 核心计算引擎
 
-Formulas from index.html JavaScript (lines 610-678):
-  Shipping: (L*W*H)/1000 * 2 + 6
+Formulas:
+  Shipping: 8 + (ceil(volume_L) - 1) × 2  where volume_L = L*W*H/1000
   Cbase:    (cost+drop+pack+ship+scan)*risk / (1-dmgRate)
   Crisk:    retRate * (drop+ship+scan+pickup+process+cost*resLoss)
   R_Total:  RealComm + effWithdraw + adPct + opsPct + memDisc
   Total_Fixed: Cbase + Crisk + adFixed - ship*withdrawRate
   BreakEven: Total_Fixed / (1 - R_Total)
   Profit:   price - price*R_Total - Total_Fixed
+  TargetPrice: BreakEven × (1 + target_profit_rate/100)
+  TargetDiscount: floor((1 - target_price/current_price) × 100), [0,95]
 """
 
 from dataclasses import dataclass
@@ -18,6 +20,15 @@ import math
 import re
 
 from src.config import Config
+
+
+@dataclass
+class ShippingConfig:
+    """Shipping formula configuration"""
+    formula: str = "wb_cross_border"    # Formula type
+    base_fee: float = 8.0               # 首升费用
+    rate_per_unit: float = 2.0          # 续升费率
+    ceil_volume: bool = True            # Whether to ceil the volume
 
 
 @dataclass
@@ -39,6 +50,7 @@ class CalculationParams:
     member_disc: float = 3.0
     target_profit_rate: float = 10.0
     default_commission: float = 30.0
+    shipping_config: ShippingConfig = None  # None = use default WB跨境 formula
 
 
 @dataclass
@@ -52,6 +64,8 @@ class CalculationResult:
     current_profit: float
     max_discount: int
     min_price: float
+    target_discount: int = 0
+    target_price: float = 0.0
 
 
 class LossCalculator:
@@ -59,9 +73,22 @@ class LossCalculator:
         self.params = params or CalculationParams()
 
     # ── Platform shipping fee ──
-    # (L*W*H)/1000 * 2 + 6
     def calc_shipping_fee(self, l: float, w: float, h: float) -> float:
-        return (l * w * h) / 1000 * 2 + 6
+        """运费计算 — 根据shipping_config选择公式"""
+        cfg = self.params.shipping_config or ShippingConfig()
+
+        volume_l = l * w * h / 1000  # Volume in liters
+
+        if cfg.formula == "wb_local":
+            # WB本土: ≤1L查表/固定, >1L = 46 + (ceil(vol)-1)×14
+            if volume_l <= 1:
+                return 32.0  # Fixed for ≤1L
+            v = math.ceil(volume_l)
+            return 46 + (v - 1) * 14
+
+        # wb_cross_border (default)
+        v = math.ceil(volume_l) if cfg.ceil_volume else volume_l
+        return cfg.base_fee + max(0, v - 1) * cfg.rate_per_unit
 
     # ── Base cost with risk and damage ──
     # (cost+drop+pack+ship+scan)*risk / (1-dmgRate)
@@ -122,11 +149,26 @@ class LossCalculator:
     def calc_min_price_no_loss(self, breakeven: float) -> float:
         return max(breakeven, Config.PRICE_MIN)
 
+    # ── Target price with profit rate ──
+    # target_price = breakeven × (1 + target_profit_rate/100)
+    def calc_target_price(self, breakeven: float, target_profit_rate: float) -> float:
+        return breakeven * (1 + target_profit_rate / 100)
+
+    # ── Target discount ──
+    # floor((1 - target_price/current_price) × 100), clamped [0, 95]
+    def calc_target_discount(self, current_price: float, target_price: float) -> int:
+        if current_price <= 0:
+            return 0
+        raw = math.floor((1 - target_price / current_price) * 100)
+        return max(0, min(95, raw))
+
     # ── Full calculation result ──
     def calc_full_result(self, current_price: float, product_cost: float,
                          l: float, w: float, h: float) -> CalculationResult:
         sf = self.calc_shipping_fee(l, w, h)
         be = self.calc_breakeven(product_cost, sf)
+        target_price = self.calc_target_price(be, self.params.target_profit_rate)
+        target_discount = self.calc_target_discount(current_price, target_price)
         return CalculationResult(
             shipping_fee=sf,
             cbase=self.calc_cbase(product_cost, sf),
@@ -137,6 +179,8 @@ class LossCalculator:
             current_profit=self.calc_profit(current_price, product_cost, sf),
             max_discount=self.calc_max_discount_no_loss(current_price, be),
             min_price=self.calc_min_price_no_loss(be),
+            target_discount=target_discount,
+            target_price=round(target_price, 2),
         )
 
     # ── Currency conversion ──

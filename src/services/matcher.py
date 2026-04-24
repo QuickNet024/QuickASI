@@ -6,6 +6,7 @@ import logging
 from typing import Optional, Tuple, List
 
 from src.models.database import DatabaseManager
+from src.config import Config
 from src.models.product import Product
 
 logger = logging.getLogger(__name__)
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ProductMatcher:
     def __init__(self, db: DatabaseManager = None):
-        self.db = db or DatabaseManager()
+        self.db = db or DatabaseManager(Config.DB_FEISHU_PATH, init_tables=["products"])
 
     @staticmethod
     def parse_seller_sku(seller_sku: str) -> Tuple[str, str]:

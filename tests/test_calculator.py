@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Tests for the core calculation engine.
-Formulas verified against index.html JavaScript (lines 610-678).
+Formulas verified against new WB跨境 shipping formula.
 
-Default params from index.html:
-  dim=51*14*5, risk=1.00, cost=132, drop=10, pack=0, ship=13.14, scan=1,
+Default params:
+  dim=51*14*5, risk=1.00, cost=132, drop=10, pack=0, ship=14, scan=1,
   pickup=0, process=10, resLoss=15%, dmgRate=2%, retRate=15%,
   commRate=10%, commDisc=0%, withdrawFee=1%, adFixed=0, adPct=2.5%,
   opsPct=3%, memDisc=3%, price=230
@@ -28,22 +28,22 @@ def _custom_calc(**overrides) -> LossCalculator:
 
 
 # ══════════════════════════════════════════════════════════════════
-#  TestShippingFee  —  (L*W*H)/1000 * 2 + 6
+#  TestShippingFee  —  8 + (ceil(volume_L) - 1) × 2
 # ══════════════════════════════════════════════════════════════════
 
 class TestShippingFee:
     calc = _default_calc()
 
     def test_standard(self):
-        # 51*14*5 = 3570; 3570/1000 = 3.57; 3.57*2 = 7.14; 7.14+6 = 13.14
-        assert self.calc.calc_shipping_fee(51, 14, 5) == pytest.approx(13.14, abs=0.01)
+        # 51*14*5 = 3570; 3570/1000 = 3.57; ceil(3.57)=4; 8+(4-1)*2 = 14
+        assert self.calc.calc_shipping_fee(51, 14, 5) == pytest.approx(14.0)
 
     def test_zero_dimensions(self):
-        # 0*0*0 = 0; 0/1000*2+6 = 6.0
-        assert self.calc.calc_shipping_fee(0, 0, 0) == pytest.approx(6.0)
+        # 0*0*0 = 0; /1000 = 0; ceil(0)=0; 8+max(0,-1)*2 = 8
+        assert self.calc.calc_shipping_fee(0, 0, 0) == pytest.approx(8.0)
 
     def test_large(self):
-        # 100*50*30 = 150000; /1000 = 150; *2 = 300; +6 = 306
+        # 100*50*30 = 150000; /1000 = 150; ceil(150)=150; 8+(150-1)*2 = 306
         assert self.calc.calc_shipping_fee(100, 50, 30) == pytest.approx(306.0)
 
 
@@ -56,28 +56,32 @@ class TestCbase:
         # cost=132, drop=10, pack=0, ship=13.14, scan=1 → sum=156.14
         # risk=1.0, dmg=2% → 156.14 / 0.98 = 159.3265...
         calc = _default_calc()
-        result = calc.calc_cbase(132, 13.14)
-        assert result == pytest.approx(159.3265, abs=0.01)
+    def test_standard(self):
+        # cost=132, drop=10, pack=0, ship=14, scan=1 → sum=157
+        # risk=1.0, dmg=2% → 157 / 0.98 = 160.2041
+        calc = _default_calc()
+        result = calc.calc_cbase(132, 14)
+        assert result == pytest.approx(160.2041, abs=0.01)
 
     def test_with_risk_factor(self):
         # risk=1.05 → sum*1.05 / 0.98
         calc = _custom_calc(risk_rate=1.05)
-        result = calc.calc_cbase(132, 13.14)
-        expected = 156.14 * 1.05 / 0.98
+        result = calc.calc_cbase(132, 14)
+        expected = 157.0 * 1.05 / 0.98
         assert result == pytest.approx(expected, abs=0.01)
 
     def test_with_damage_rate(self):
         # dmg=5% → sum / 0.95
         calc = _custom_calc(damage_rate=5.0)
-        result = calc.calc_cbase(132, 13.14)
-        expected = 156.14 / 0.95
+        result = calc.calc_cbase(132, 14)
+        expected = 157.0 / 0.95
         assert result == pytest.approx(expected, abs=0.01)
 
     def test_zero_damage(self):
         # dmg=0% → denominator is 1.0
         calc = _custom_calc(damage_rate=0.0)
-        result = calc.calc_cbase(100, 10)
-        expected = (100 + 10 + 0 + 10 + 1)  # sum * 1.0 / 1.0
+        result = calc.calc_cbase(100, 14)
+        expected = (100 + 10 + 0 + 14 + 1)  # sum * 1.0 / 1.0
         assert result == pytest.approx(expected, abs=0.01)
 
 
@@ -87,15 +91,15 @@ class TestCbase:
 
 class TestCrisk:
     def test_standard(self):
-        # lossPerReturn = 10+13.14+1+0+10+132*0.15 = 53.94
-        # Crisk = 0.15 * 53.94 = 8.091
+        # lossPerReturn = 10+14+1+0+10+132*0.15 = 54.8
+        # Crisk = 0.15 * 54.8 = 8.22
         calc = _default_calc()
-        result = calc.calc_crisk(132, 13.14)
-        assert result == pytest.approx(8.091, abs=0.01)
+        result = calc.calc_crisk(132, 14)
+        assert result == pytest.approx(8.22, abs=0.01)
 
     def test_zero_return_rate(self):
         calc = _custom_calc(return_rate=0.0)
-        result = calc.calc_crisk(132, 13.14)
+        result = calc.calc_crisk(132, 14)
         assert result == pytest.approx(0.0)
 
 
@@ -127,12 +131,12 @@ class TestRTotal:
 
 class TestTotalFixed:
     def test_standard(self):
-        # Cbase ≈ 159.3265, Crisk ≈ 8.091, adFixed=0
-        # withdrawSaving = 13.14 * 0.01 = 0.1314
-        # Total_Fixed = 159.3265 + 8.091 + 0 - 0.1314 = 167.2861
+        # Cbase ≈ 160.20, Crisk ≈ 8.22, adFixed=0
+        # withdrawSaving = 14 * 0.01 = 0.14
+        # Total_Fixed = 160.20 + 8.22 + 0 - 0.14 = 168.28
         calc = _default_calc()
-        result = calc.calc_total_fixed(132, 13.14)
-        assert result == pytest.approx(167.2861, abs=0.01)
+        result = calc.calc_total_fixed(132, 14)
+        assert result == pytest.approx(168.28, abs=0.1)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -141,26 +145,26 @@ class TestTotalFixed:
 
 class TestBreakEven:
     def test_standard(self):
-        # BreakEven = 167.2861 / (1 - 0.194) = 167.2861 / 0.806
+        # BreakEven = 168.28 / (1 - 0.194) = 168.28 / 0.806
         calc = _default_calc()
-        result = calc.calc_breakeven(132, 13.14)
-        expected = 167.2861 / 0.806
-        assert result == pytest.approx(expected, abs=0.05)
+        result = calc.calc_breakeven(132, 14)
+        expected = 168.28 / 0.806
+        assert result == pytest.approx(expected, abs=0.1)
 
     def test_zero_fixed(self):
         # With zero cost, drop, pack, scan, return_rate=0, dmg=0:
-        # Cbase = 0+0+0+6+0 = 6.0 * 1.0 / 1.0 = 6.0
+        # shipping=8 (new formula), Cbase = 0+0+0+8+0 = 8.0 * 1.0 / 1.0 = 8.0
         # Crisk = 0 (return_rate=0)
-        # withdrawSaving = 6*0.01 = 0.06
-        # Total_Fixed = 6.0 + 0 + 0 - 0.06 = 5.94
+        # withdrawSaving = 8*0.01 = 0.08
+        # Total_Fixed = 8.0 + 0 + 0 - 0.08 = 7.92
         # R_Total = 0.194
-        # BreakEven = 5.94 / 0.806 ≈ 7.37
+        # BreakEven = 7.92 / 0.806 ≈ 9.83
         calc = _custom_calc(
             risk_rate=1.0, dropship_fee=0, pack_fee=0, scan_fee=0,
             return_rate=0, damage_rate=0
         )
-        result = calc.calc_breakeven(0, 6.0)
-        assert result == pytest.approx(7.37, abs=0.01)
+        result = calc.calc_breakeven(0, 8.0)
+        assert result == pytest.approx(9.83, abs=0.1)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -169,23 +173,23 @@ class TestBreakEven:
 
 class TestProfit:
     def test_profit_at_given_price(self):
-        # price=230, R_Total=0.194, Total_Fixed≈167.2861
-        # profit = 230 - 230*0.194 - 167.2861 = 230 - 44.62 - 167.2861 ≈ 18.09
+        # price=230, R_Total=0.194, Total_Fixed≈168.28
+        # profit = 230 - 230*0.194 - 168.28 = 230 - 44.62 - 168.28 ≈ 17.10
         calc = _default_calc()
-        result = calc.calc_profit(230, 132, 13.14)
-        assert result == pytest.approx(18.09, abs=0.5)
+        result = calc.calc_profit(230, 132, 14)
+        assert result == pytest.approx(17.10, abs=0.5)
 
     def test_loss_scenario(self):
         # Price below breakeven → negative profit
         calc = _default_calc()
-        result = calc.calc_profit(100, 132, 13.14)
+        result = calc.calc_profit(100, 132, 14)
         assert result < 0
 
     def test_zero_profit_at_breakeven(self):
         # At breakeven price, profit ≈ 0
         calc = _default_calc()
-        breakeven = calc.calc_breakeven(132, 13.14)
-        result = calc.calc_profit(breakeven, 132, 13.14)
+        breakeven = calc.calc_breakeven(132, 14)
+        result = calc.calc_profit(breakeven, 132, 14)
         assert result == pytest.approx(0.0, abs=0.01)
 
 
@@ -197,9 +201,9 @@ class TestMaxDiscount:
     calc = _default_calc()
 
     def test_standard(self):
-        # breakeven≈207.55, price=230
-        # (1 - 207.55/230)*100 = (1 - 0.9024)*100 = 9.76 → floor = 9
-        breakeven = 207.55
+        # breakeven≈208.66, price=230
+        # (1 - 208.66/230)*100 = (1 - 0.9072)*100 = 9.28 → floor = 9
+        breakeven = 208.66
         result = self.calc.calc_max_discount_no_loss(230, breakeven)
         assert result == 9
 
@@ -231,7 +235,7 @@ class TestMinPrice:
 
     def test_at_zero_discount(self):
         # min_price should equal breakeven when breakeven > PRICE_MIN
-        breakeven = 207.55
+        breakeven = 208.66
         result = self.calc.calc_min_price_no_loss(breakeven)
         assert result == pytest.approx(breakeven, abs=0.01)
 
@@ -289,11 +293,11 @@ class TestCalcFullResult:
         r = calc.calc_full_result(230, 132, 51, 14, 5)
 
         assert isinstance(r, CalculationResult)
-        assert r.shipping_fee == pytest.approx(13.14, abs=0.01)
-        assert r.cbase == pytest.approx(159.3265, abs=0.01)
-        assert r.crisk == pytest.approx(8.091, abs=0.01)
+        assert r.shipping_fee == pytest.approx(14.0)
+        assert r.cbase == pytest.approx(160.20, abs=0.5)
+        assert r.crisk == pytest.approx(8.22, abs=0.01)
         assert r.r_total == pytest.approx(0.194, abs=0.001)
-        assert r.breakeven == pytest.approx(167.2861 / 0.806, abs=0.05)
-        assert r.current_profit == pytest.approx(18.09, abs=0.5)
+        assert r.breakeven == pytest.approx(168.28 / 0.806, abs=0.1)
+        assert r.current_profit == pytest.approx(17.10, abs=0.5)
         assert isinstance(r.max_discount, int)
         assert r.min_price >= 5

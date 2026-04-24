@@ -1,26 +1,32 @@
 # -*- coding: utf-8 -*-
-"""WB佣金匹配服务 — 支持多平台多店铺类型"""
+"""WB佣金匹配服务 — 支持多平台多店铺类型、动态多表架构"""
 
+import json
+import os
 import openpyxl
 import logging
 from typing import Optional
+from datetime import datetime
 
 from src.config import Config
 from src.models.database import DatabaseManager
-from src.models.commission import Commission
+from src.models.commission import Commission, CommissionTableInfo
 
 logger = logging.getLogger(__name__)
 
 
 class CommissionService:
     def __init__(self, db: DatabaseManager = None):
-        self.db = db or DatabaseManager()
+        self.db = db or DatabaseManager(Config.DB_COMMISSION_PATH, init_tables=["commissions", "commission_meta", "app_config"])
 
     def import_from_excel(self, file_path: str,
                           platform: str = "wb",
                           shop_type: str = "local") -> int:
         """Import commission table from Excel file.
-        
+
+        Reads ALL columns from the Excel file (not just column C).
+        Creates a dynamic table per platform+shop_type combination.
+
         Args:
             file_path: Excel文件路径
             platform: 平台标识 ('wb', 'ozon', 'market')
@@ -28,29 +34,74 @@ class CommissionService:
         """
         wb = openpyxl.load_workbook(file_path)
         ws = wb.active
-        rows = list(ws.iter_rows(min_row=2, values_only=True))
-        commissions = []
-        for row in rows:
-            if not row or len(row) < 3:
+
+        # 1. Read header row (row 1)
+        headers = [str(cell or "").strip() for cell in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
+
+        # 2. Identify columns:
+        #    - First 2 non-empty columns are category and product (always)
+        #    - Remaining columns that contain "%" or numeric data are rate columns
+        rate_col_indices = []
+        rate_headers = []
+        for i, h in enumerate(headers):
+            if i < 2:
+                continue
+            if "%" in h or "％" in h or h:
+                rate_col_indices.append(i)
+                rate_headers.append(h)
+
+        # 3. Build DB column definitions
+        rate_db_names = [f"rate_col_{i}" for i in range(len(rate_col_indices))]
+        columns = [(name, "REAL") for name in rate_db_names]
+
+        # 4. Create/recreate the data table
+        table_name = f"commission_{platform}_{shop_type}"
+        self.db.create_commission_data_table(table_name, columns)
+
+        # 5. Read all data rows
+        rows = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if not row or len(row) < 2:
                 continue
             category = str(row[0] or "").strip()
             product = str(row[1] or "").strip()
-            rate_str = str(row[2] or "0").strip()
-            # Handle European format "10,0" → "10.0"
-            rate_str = rate_str.replace(",", ".")
-            try:
-                rate = float(rate_str)
-            except ValueError:
+            if not category and not product:
                 continue
-            commissions.append(Commission(
-                category=category, product=product, rate=rate,
-                platform=platform, shop_type=shop_type,
-                source=f"{platform}_{shop_type}",
-            ))
+
+            rate_values = []
+            for idx in rate_col_indices:
+                val = row[idx] if idx < len(row) else None
+                if val is None:
+                    rate_values.append(0.0)
+                else:
+                    val_str = str(val).replace(",", ".").strip()
+                    try:
+                        rate_values.append(float(val_str))
+                    except ValueError:
+                        rate_values.append(0.0)
+
+            rows.append(tuple([category, product] + rate_values))
+
         wb.close()
 
-        self.db.clear_commissions_by_type(platform, shop_type)
-        return self.db.insert_commissions_batch(commissions)
+        # 6. Batch insert
+        if rows:
+            self.db.import_commission_rows_batch(table_name, rows)
+
+        # 7. Save metadata
+        info = CommissionTableInfo(
+            table_name=table_name,
+            platform=platform,
+            shop_type=shop_type,
+            source_file=os.path.basename(file_path),
+            column_headers=json.dumps(headers, ensure_ascii=False),
+            rate_columns=json.dumps(rate_db_names),
+            row_count=len(rows),
+            imported_at=datetime.now().isoformat()
+        )
+        self.db.save_commission_table_info(info)
+
+        return len(rows)
 
     def sync_from_api(self, platform: str = "wb",
                       shop_type: str = "local") -> int:
@@ -70,17 +121,28 @@ class CommissionService:
                              platform: str = "wb",
                              shop_type: str = "local") -> tuple:
         """Find commission rate for a category. Returns (rate, matched, source).
-        Priority: match 'product' column first, then 'category' column.
-        Default: 30% if no match."""
-        # 1. Try matching product column (filtered by platform + shop_type)
-        rate = self.db.find_commission_by_product(category_name, platform, shop_type)
+
+        Looks up from dynamic commission tables first, falls back to
+        old commissions table for backward compatibility.
+        Default: 30% if no match.
+        """
+        table_name = f"commission_{platform}_{shop_type}"
+
+        # Check if dynamic table exists
+        tables = self.db.get_commission_tables()
+        table_names = [t.table_name for t in tables]
+        if table_name not in table_names:
+            # Fall back to old commissions table for backward compatibility
+            rate = self.db.find_commission_by_product(category_name, platform, shop_type)
+            if rate is not None:
+                return rate, True, "product"
+            rate = self.db.find_commission_by_category(category_name, platform, shop_type)
+            if rate is not None:
+                return rate, True, "category"
+            return Config.DEFAULT_COMMISSION_RATE, False, "default"
+
+        # New table lookup — use first rate column
+        rate = self.db.find_rate_in_table(table_name, category_name, "rate_col_0")
         if rate is not None:
             return rate, True, "product"
-
-        # 2. Try matching category column (filtered by platform + shop_type)
-        rate = self.db.find_commission_by_category(category_name, platform, shop_type)
-        if rate is not None:
-            return rate, True, "category"
-
-        # 3. Default
-        return Config.DEFAULT_PARAMS["default_commission"], False, "default"
+        return Config.DEFAULT_COMMISSION_RATE, False, "default"

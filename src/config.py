@@ -38,6 +38,11 @@ class Config:
         "default_commission": 30.0,  # 默认佣金率(未匹配时) (%)
     }
 
+    # ── 默认计算参数 (when matching fails) ──
+    DEFAULT_DIMENSIONS = "30*20*10"      # Default dimensions string
+    DEFAULT_WEIGHT = 0.5                 # Default weight in kg
+    DEFAULT_COMMISSION_RATE = 30.0       # Default commission rate (%)
+
     # ── 计算模式 ──
     CALC_MODE_CROSS_BORDER = "cross_border"  # 跨境店铺 CNY
     CALC_MODE_LOCAL = "local"                 # 本土店铺 RUB
@@ -48,5 +53,13 @@ class Config:
     PRICE_MIN = 5
     PRICE_MAX = 850000
 
-    # ── 数据库 ──
+    # ── 数据库（独立数据库） ──
+    DB_DIR = "data"
+    DB_APP_PATH = "data/app.db"
+    DB_FEISHU_PATH = "data/feishu.db"
+    DB_COMMISSION_PATH = "data/commission.db"
+    DB_EXCHANGE_RATE_PATH = "data/exchange_rate.db"
+    DB_DISCOUNT_CALC_PATH = "data/discount_calc.db"
+    DB_SHIPPING_PATH = "data/shipping.db"
+    # 旧路径（仅迁移参考，不再使用）
     DB_PATH = "data/loss_calc.db"

@@ -13,14 +13,12 @@ from src.models.commission import Commission
 @pytest.fixture
 def db():
     """每个测试使用独立的临时数据库"""
-    DatabaseManager.reset_instance()
     with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as f:
         db_path = f.name
-    db = DatabaseManager(db_path=db_path)
+    db = DatabaseManager(db_path)
     yield db
     # Cleanup
     db.close()
-    DatabaseManager.reset_instance()
     if os.path.exists(db_path):
         os.unlink(db_path)
 

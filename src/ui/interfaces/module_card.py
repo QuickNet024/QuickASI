@@ -8,13 +8,14 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCursor
 
-from src.ui.assets.icons import get_icon_pixmap, MODULE_COLORS, COLOR_MUTED
+from src.ui.assets.icons import get_icon_pixmap, MODULE_COLORS, COLOR_MUTED, get_util_icon
 
 # 模块 → accent色分类映射
 MODULE_ACCENT_MAP = {
     "feishu": "blue",
     "commission": "green",
     "exchange_rate": "orange",
+    "shipping": "blue",
 }
 
 
@@ -71,11 +72,14 @@ class ModuleCard(QWidget):
         header_row.addStretch()
 
         # 关闭按钮
-        self._btn_remove = QPushButton("×")
+        self._btn_remove = QPushButton()
         self._btn_remove.setObjectName("moduleRemoveBtn")
         self._btn_remove.setFixedSize(24, 24)
         self._btn_remove.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self._btn_remove.setToolTip("移除此接口")
+        close_px = get_util_icon("close", 14, "#9CA3AF")
+        from PySide6.QtGui import QIcon
+        self._btn_remove.setIcon(QIcon(close_px))
         self._btn_remove.clicked.connect(lambda: self.remove_requested.emit(self.module_id))
         header_row.addWidget(self._btn_remove)
 

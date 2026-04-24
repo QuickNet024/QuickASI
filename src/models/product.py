@@ -27,3 +27,5 @@ class Product:
     original_price: float = 0.0
     supplier: str = ""
     remarks: str = ""
+    # V2: 原始同步数据（JSON，存飞书行的完整原始值）
+    raw_sync_data: str = ""

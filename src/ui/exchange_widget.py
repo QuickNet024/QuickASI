@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """汇率显示组件"""
 
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, Signal, QThread
 
 from src.models.database import DatabaseManager
 from src.services.exchange_rate import ExchangeRateService
+from src.ui.assets.icons import get_util_icon
 
 
 class ExchangeRateWorker(QThread):
@@ -21,12 +22,14 @@ class ExchangeRateWorker(QThread):
         try:
             svc = ExchangeRateService(self.db)
             result = svc.fetch_and_save()
-            if result:
-                self.finished.emit(result)
-            else:
-                self.error.emit("API返回数据无效")
+            if not self.isInterruptionRequested():
+                if result:
+                    self.finished.emit(result)
+                else:
+                    self.error.emit("API返回数据无效")
         except Exception as e:
-            self.error.emit(str(e))
+            if not self.isInterruptionRequested():
+                self.error.emit(str(e))
 
 
 class ExchangeWidget(QWidget):
@@ -46,17 +49,18 @@ class ExchangeWidget(QWidget):
         layout.setContentsMargins(8, 4, 8, 4)
 
         self.lbl_rate = QLabel("1 CNY = ?.?? RUB")
-        self.lbl_rate.setStyleSheet("font-weight: bold; font-size: 13px;")
+        self.lbl_rate.setProperty("class", "stat-total")
         layout.addWidget(self.lbl_rate)
 
         self.lbl_updated = QLabel("")
-        self.lbl_updated.setStyleSheet("color: #999; font-size: 11px;")
+        self.lbl_updated.setProperty("class", "stat-label")
         layout.addWidget(self.lbl_updated)
 
         layout.addStretch()
 
-        self.btn_sync = QPushButton("🔄 同步汇率")
+        self.btn_sync = QPushButton(" 同步汇率")
         self.btn_sync.setFixedHeight(28)
+        self.btn_sync.setIcon(get_util_icon("refresh", 14))
         self.btn_sync.clicked.connect(self._on_sync)
         layout.addWidget(self.btn_sync)
 
@@ -76,7 +80,7 @@ class ExchangeWidget(QWidget):
         if self._worker and self._worker.isRunning():
             return
         self.btn_sync.setEnabled(False)
-        self.btn_sync.setText("⏳ 获取中...")
+        self.btn_sync.setText(" 获取中...")
         self._worker = ExchangeRateWorker(self.db)
         self._worker.finished.connect(self._on_done)
         self._worker.error.connect(self._on_error)
@@ -84,12 +88,22 @@ class ExchangeWidget(QWidget):
 
     def _on_done(self, rate_dict):
         self.btn_sync.setEnabled(True)
-        self.btn_sync.setText("🔄 同步汇率")
+        self.btn_sync.setText(" 同步汇率")
         self._display_rate(rate_dict["cny_to_rub"], rate_dict.get("updated_at"))
         self.rate_updated.emit(rate_dict["cny_to_rub"])
 
     def _on_error(self, err):
         self.btn_sync.setEnabled(True)
-        self.btn_sync.setText("🔄 同步汇率")
+        self.btn_sync.setText(" 同步汇率")
         self.lbl_updated.setText(f"(同步失败)")
-        self.lbl_updated.setStyleSheet("color: #cf1322; font-size: 11px;")
+        self.lbl_updated.setProperty("class", "stat-loss")
+
+    def stop_worker(self):
+        """Stop the worker thread gracefully."""
+        if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.quit()
+            self._worker.wait(3000)
+            if self._worker.isRunning():
+                self._worker.terminate()
+                self._worker.wait(1000)

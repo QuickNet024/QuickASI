@@ -26,19 +26,21 @@ class CommissionImportWorker(QThread):
 
     def __init__(self, db, file_path, platform, shop_type):
         super().__init__()
-        self.db = db
+        self._commission_db = DatabaseManager(Config.DB_COMMISSION_PATH, init_tables=["commissions", "commission_meta", "app_config"])
         self.file_path = file_path
         self.platform = platform
         self.shop_type = shop_type
 
     def run(self):
         try:
-            svc = CommissionService(self.db)
+            svc = CommissionService(self._commission_db)
             count = svc.import_from_excel(
                 self.file_path, self.platform, self.shop_type)
-            self.finished.emit(count, self.platform, self.shop_type)
+            if not self.isInterruptionRequested():
+                self.finished.emit(count, self.platform, self.shop_type)
         except Exception as e:
-            self.error.emit(str(e))
+            if not self.isInterruptionRequested():
+                self.error.emit(str(e))
 
 
 class CommissionSyncWorker(QThread):
@@ -48,15 +50,17 @@ class CommissionSyncWorker(QThread):
 
     def __init__(self, db, platforms: list):
         super().__init__()
-        self.db = db
+        self._commission_db = DatabaseManager(Config.DB_COMMISSION_PATH, init_tables=["commissions", "commission_meta", "app_config"])
         self.platforms = platforms
 
     def run(self):
         try:
-            svc = CommissionService(self.db)
+            svc = CommissionService(self._commission_db)
             total = 0
             synced = []
             for platform in self.platforms:
+                if self.isInterruptionRequested():
+                    return
                 try:
                     count = svc.sync_from_api(platform)
                     total += count
@@ -65,9 +69,11 @@ class CommissionSyncWorker(QThread):
                     raise
                 except Exception as e:
                     synced.append(f"{platform}(失败)")
-            self.finished.emit(total, synced)
+            if not self.isInterruptionRequested():
+                self.finished.emit(total, synced)
         except Exception as e:
-            self.error.emit(str(e))
+            if not self.isInterruptionRequested():
+                self.error.emit(str(e))
 
 
 # ═══ 同步平台选择对话框（多选） ══════════════
@@ -203,7 +209,7 @@ class CommissionModule(InterfaceModule):
 
     @property
     def icon_text(self) -> str:
-        return "💰"
+        return ""
 
     def create_widget(self, db, signals: ModuleSignals = None) -> QWidget:
         return _CommissionWidget(db, signals)
@@ -214,7 +220,8 @@ class _CommissionWidget(QWidget):
 
     def __init__(self, db: DatabaseManager, signals: ModuleSignals = None):
         super().__init__()
-        self.db = db
+        # db is app_db for registry; create module-specific DB
+        self.db = DatabaseManager(Config.DB_COMMISSION_PATH, init_tables=["commissions", "commission_meta", "app_config"])
         self._signals = signals
         self._worker = None
         self._build_ui()
@@ -368,6 +375,16 @@ class _CommissionWidget(QWidget):
         self.progress.setVisible(False)
         QMessageBox.warning(self, "操作失败", err)
 
+    def stop_worker(self):
+        """Stop the worker thread gracefully."""
+        if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.quit()
+            self._worker.wait(3000)
+            if self._worker.isRunning():
+                self._worker.terminate()
+                self._worker.wait(1000)
+
     # ── API 设置（3个平台独立配置）──
 
     def _on_settings(self):
@@ -381,20 +398,32 @@ class _CommissionWidget(QWidget):
         ], self.db, self).exec()
 
     def _refresh_status(self):
-        total = self.db.get_commission_count()
-        self.lbl_count.setText(f"{total} 条")
-
-        lines = []
-        for platform in ["wb", "ozon", "market"]:
-            for shop_type in ["local", "cross_border"]:
-                count = self.db.get_commission_count_by_type(platform, shop_type)
-                if count > 0:
-                    label = f"{platform.upper()}{'本土' if shop_type == 'local' else '跨境'}"
-                    lines.append(f"{label}:{count}")
-        if lines:
+        # Try dynamic tables first
+        tables = self.db.get_commission_tables()
+        if tables:
+            total = sum(t.row_count for t in tables)
+            self.lbl_count.setText(f"{total:,} 条")
+            lines = []
+            for t in tables:
+                shop_label = "本土" if t.shop_type == "local" else "跨境"
+                label = f"{t.platform.upper()}{shop_label}"
+                lines.append(f"{label}:{t.row_count:,}")
             self.lbl_detail.setText("  ".join(lines))
         else:
-            self.lbl_detail.setText("暂无佣金数据")
+            # Fallback to old commissions table
+            total = self.db.get_commission_count()
+            self.lbl_count.setText(f"{total} 条")
+            lines = []
+            for platform in ["wb", "ozon", "market"]:
+                for shop_type in ["local", "cross_border"]:
+                    count = self.db.get_commission_count_by_type(platform, shop_type)
+                    if count > 0:
+                        label = f"{platform.upper()}{'本土' if shop_type == 'local' else '跨境'}"
+                        lines.append(f"{label}:{count}")
+            if lines:
+                self.lbl_detail.setText("  ".join(lines))
+            else:
+                self.lbl_detail.setText("暂无佣金数据")
 
 
 # 自动注册

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """侧边栏导航 — 主题切换在左下角"""
 
 from PySide6.QtWidgets import (
@@ -166,6 +166,12 @@ class SideBar(QWidget):
 
         layout.addWidget(bottom_box)
         self._apply_selected_style(0)
+
+    def set_nav_visible(self, index: int, visible: bool):
+        """设置导航项可见性"""
+        if 0 <= index < len(self._buttons):
+            self._buttons[index].parentWidget().setVisible(visible)
+            self._indicators[index].setVisible(visible)
 
     def _update_theme_btn(self, theme):
         if theme == "dark":

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """汇率数据接口模块 — 统一卡片风格"""
 
 from PySide6.QtWidgets import (
@@ -23,18 +23,20 @@ class ExchangeRateWorker(QThread):
 
     def __init__(self, db):
         super().__init__()
-        self.db = db
+        self._rate_db = DatabaseManager(Config.DB_EXCHANGE_RATE_PATH, init_tables=["exchange_rates", "app_config"])
 
     def run(self):
         try:
-            svc = ExchangeRateService(self.db)
+            svc = ExchangeRateService(self._rate_db)
             result = svc.fetch_and_save()
-            if result:
-                self.finished.emit(result)
-            else:
-                self.error.emit("API返回数据无效")
+            if not self.isInterruptionRequested():
+                if result:
+                    self.finished.emit(result)
+                else:
+                    self.error.emit("API返回数据无效")
         except Exception as e:
-            self.error.emit(str(e))
+            if not self.isInterruptionRequested():
+                self.error.emit(str(e))
 
 
 # ═══ Module ═══════════════════════════════════
@@ -66,7 +68,8 @@ class _ExchangeRateWidget(QWidget):
 
     def __init__(self, db: DatabaseManager, signals: ModuleSignals = None):
         super().__init__()
-        self.db = db
+        # db is app_db for registry; create module-specific DB
+        self.db = DatabaseManager(Config.DB_EXCHANGE_RATE_PATH, init_tables=["exchange_rates", "app_config"])
         self._signals = signals
         self._worker = None
         self._build_ui()
@@ -156,6 +159,16 @@ class _ExchangeRateWidget(QWidget):
             self.lbl_rate.setText(f"1 CNY = {rate['cny_to_rub']:.4f} RUB")
             ts = str(rate.get("updated_at", ""))[:16]
             self.lbl_status.setText(f"更新: {ts}")
+
+    def stop_worker(self):
+        """Stop the worker thread gracefully."""
+        if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.quit()
+            self._worker.wait(3000)
+            if self._worker.isRunning():
+                self._worker.terminate()
+                self._worker.wait(1000)
 
 
 # 自动注册

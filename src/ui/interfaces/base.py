@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """接口模块抽象基类 — 所有数据接口模块的父类"""
 
 from abc import ABC, abstractmethod
@@ -35,7 +35,7 @@ class InterfaceModule(ABC):
     @property
     def icon_text(self) -> str:
         """图标字符（emoji），用于卡片标题"""
-        return "📦"
+        return ""
 
     @property
     def version(self) -> str:
