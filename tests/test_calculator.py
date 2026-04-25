@@ -213,7 +213,8 @@ class TestMaxDiscount:
 
     def test_price_below_breakeven(self):
         result = self.calc.calc_max_discount_no_loss(100, 200)
-        assert result == 0
+        # price < breakeven → need to raise price, discount is negative
+        assert result == -100
 
     def test_discount_exceeds_95(self):
         # Very low breakeven relative to price

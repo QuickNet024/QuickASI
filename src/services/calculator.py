@@ -37,6 +37,7 @@ class CalculationParams:
     dropship_fee: float = 10.0
     pack_fee: float = 0.0
     scan_fee: float = 1.0
+    return_pickup_fee: float = 0.0
     return_process_fee: float = 10.0
     residual_loss_rate: float = 15.0
     damage_rate: float = 2.0
@@ -103,7 +104,7 @@ class LossCalculator:
         p = self.params
         loss_per_return = (
             p.dropship_fee + shipping_fee + p.scan_fee
-            + p.return_process_fee
+            + p.return_pickup_fee + p.return_process_fee
             + product_cost * p.residual_loss_rate / 100
         )
         return p.return_rate / 100 * loss_per_return
@@ -137,12 +138,13 @@ class LossCalculator:
         return price - price * self.calc_r_total() - self.calc_total_fixed(product_cost, shipping_fee)
 
     # ── Max discount without loss ──
-    # floor((1 - breakeven/price)*100), clamped [0, 95]
+    # floor((1 - breakeven/price)*100), clamped [-∞, 95]
+    # 负数表示需要涨价才能保本，保留真实值
     def calc_max_discount_no_loss(self, current_price: float, breakeven: float) -> int:
         if current_price <= 0:
             return 0
         raw = math.floor((1 - breakeven / current_price) * 100)
-        return max(0, min(95, raw))
+        return min(95, raw)
 
     # ── Minimum price without loss ──
     # max(breakeven, PRICE_MIN)
@@ -155,12 +157,13 @@ class LossCalculator:
         return breakeven * (1 + target_profit_rate / 100)
 
     # ── Target discount ──
-    # floor((1 - target_price/current_price) × 100), clamped [0, 95]
+    # floor((1 - target_price/current_price) × 100), clamped [-∞, 95]
+    # 负数表示需要涨价才能达到目标利润，保留真实值
     def calc_target_discount(self, current_price: float, target_price: float) -> int:
         if current_price <= 0:
             return 0
         raw = math.floor((1 - target_price / current_price) * 100)
-        return max(0, min(95, raw))
+        return min(95, raw)
 
     # ── Full calculation result ──
     def calc_full_result(self, current_price: float, product_cost: float,

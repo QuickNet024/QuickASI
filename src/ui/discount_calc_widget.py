@@ -7,10 +7,10 @@ import logging
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QGroupBox, QMessageBox, QProgressBar,
-    QTabWidget, QTableWidget, QTableWidgetItem,
-    QMenu, QDialog, QHeaderView
+    QTabWidget, QDialog, QRadioButton, QButtonGroup,
+    QDoubleSpinBox, QApplication, QCheckBox, QLineEdit
 )
-from PySide6.QtCore import Qt, Signal, QThread
+from PySide6.QtCore import Signal, QThread
 
 from src.config import Config
 from src.models.database import DatabaseManager
@@ -20,6 +20,7 @@ from src.ui.match_data_table import MatchDataTable
 from src.ui.calc_data_table import CalcDataTable
 from src.ui.import_settings_dialog import ImportSettingsDialog
 from src.ui.calc_settings_dialog import CalcSettingsDialog
+from src.ui.raw_table import RawTable
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class DiscountCalcWidget(QWidget):
     """折扣推算页: 操作栏 + 结果表"""
 
     calculate_requested = Signal()
+    import_done = Signal()
     export_requested = Signal()
 
     STRATEGY_DISCOUNT_ONLY = "discount_only"
@@ -68,7 +70,6 @@ class DiscountCalcWidget(QWidget):
         self._last_commission_table = None
         self._last_strategy = "discount_only"
         self._last_exchange_rate = 12.0
-        self._last_rate_realtime = True  # track rate mode for dialog restore
         self._last_shop_type = "wb_cross_border"
         self._is_matched = False
         self._match_count = 0
@@ -140,6 +141,25 @@ class DiscountCalcWidget(QWidget):
         self.lbl_summary = QLabel("")
         self.lbl_summary.setProperty("class", "stat-label")
         action_row.addWidget(self.lbl_summary)
+        # 汇率选择
+        self.rb_rate_realtime = QRadioButton("实时汇率")
+        self.rb_rate_specified = QRadioButton("指定")
+        grp_rate = QButtonGroup(self)
+        grp_rate.addButton(self.rb_rate_realtime)
+        grp_rate.addButton(self.rb_rate_specified)
+        self.rb_rate_realtime.setChecked(True)
+        
+        self.spin_rate = QDoubleSpinBox()
+        self.spin_rate.setRange(0.01, 100.0)
+        self.spin_rate.setDecimals(4)
+        self.spin_rate.setValue(12.0)
+        self.spin_rate.setFixedWidth(90)
+        self.spin_rate.setEnabled(False)
+        self.rb_rate_specified.toggled.connect(self.spin_rate.setEnabled)
+        
+        action_row.addWidget(self.rb_rate_realtime)
+        action_row.addWidget(self.rb_rate_specified)
+        action_row.addWidget(self.spin_rate)
         action_row.addStretch()
         op_layout.addLayout(action_row)
 
@@ -152,31 +172,63 @@ class DiscountCalcWidget(QWidget):
 
         layout.addWidget(op_card)
 
+        # ── 筛选栏 ──
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(6)
+
+        # 搜索框
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("🔍 搜索...")
+        self.search_input.setMinimumWidth(160)
+        self.search_input.setMaximumWidth(200)
+        self.search_input.setObjectName("searchInput")
+        filter_row.addWidget(self.search_input)
+
+        self.chk_profit_filter = QCheckBox("盈亏额低于")
+        self.chk_profit_filter.setObjectName("filterCheck")
+        filter_row.addWidget(self.chk_profit_filter)
+
+        self.spin_profit_threshold = QDoubleSpinBox()
+        self.spin_profit_threshold.setRange(-999999, 999999)
+        self.spin_profit_threshold.setDecimals(2)
+        self.spin_profit_threshold.setValue(0)
+        self.spin_profit_threshold.setFixedWidth(100)
+        self.spin_profit_threshold.setEnabled(False)
+        filter_row.addWidget(self.spin_profit_threshold)
+
+        self.chk_unmatched = QCheckBox("仅显示未匹配SKU")
+        self.chk_unmatched.setObjectName("filterCheck")
+        filter_row.addWidget(self.chk_unmatched)
+
+        self.btn_apply_filter = QPushButton("确定筛选")
+        self.btn_apply_filter.setProperty("class", "btn-primary")
+        self.btn_apply_filter.setMinimumWidth(72)
+        filter_row.addWidget(self.btn_apply_filter)
+
+        self.btn_clear_filter = QPushButton("清除筛选")
+        self.btn_clear_filter.setProperty("class", "btn-outline")
+        self.btn_clear_filter.setMinimumWidth(72)
+        filter_row.addWidget(self.btn_clear_filter)
+
+        self.lbl_filter_count = QLabel("")
+        self.lbl_filter_count.setProperty("class", "stat-label")
+        filter_row.addWidget(self.lbl_filter_count)
+        filter_row.addStretch()
+
+        layout.addLayout(filter_row)
+
+        # Connect filter signals
+        self.chk_profit_filter.toggled.connect(self.spin_profit_threshold.setEnabled)
+        self.search_input.textChanged.connect(self._on_search_changed)
+        self.btn_apply_filter.clicked.connect(self._apply_filters)
+        self.btn_clear_filter.clicked.connect(self._clear_filters)
+
         # ── Tab Widget: 4-tab layout ──
         self.tabs = QTabWidget()
         self.tabs.setObjectName("discountTabs")
 
         # Tab 1: 原始数据
-        self.raw_table = QTableWidget()
-        self.raw_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.raw_table.setAlternatingRowColors(True)
-        self.raw_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.raw_table.verticalHeader().setVisible(False)
-        self.raw_table.setShowGrid(True)
-
-        # Raw table filter/sort state
-        self._raw_sort_col = -1
-        self._raw_sort_order = Qt.SortOrder.AscendingOrder
-        self._raw_col_filters = {}  # col_idx → set(allowed_values)
-        self._raw_data_rows = []    # store raw data for filtering
-
-        # Header setup
-        raw_header = self.raw_table.horizontalHeader()
-        raw_header.setSectionsClickable(True)
-        raw_header.setSortIndicatorShown(True)
-        raw_header.sectionClicked.connect(self._on_raw_header_clicked)
-        raw_header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        raw_header.customContextMenuRequested.connect(self._on_raw_header_context_menu)
+        self.raw_table = RawTable()
 
         # Tab 2: 匹配数据
         self.match_table = MatchDataTable()
@@ -194,6 +246,9 @@ class DiscountCalcWidget(QWidget):
         self.tabs.addTab(self.match_table, "匹配数据")
         self.tabs.addTab(self.calc_table, "计算数据")
         self.tabs.addTab(self.result_table, "结果数据")
+
+        # Update filter count when switching tabs
+        self.tabs.currentChanged.connect(lambda: self._update_filter_count())
 
         layout.addWidget(self.tabs, stretch=1)
 
@@ -221,9 +276,19 @@ class DiscountCalcWidget(QWidget):
             self.lbl_currency.setText(f"计算币种: {currency}")
 
             count = self._svc.import_from_excel(file_path)
+            QApplication.processEvents()
             self.lbl_file.setText(f"{os.path.basename(file_path)}  ({count} 行已导入)")
             self.lbl_file.setProperty("class", "stat-profit")
+            self._is_matched = False
+            self._match_count = 0
+            self._calc_done = False
+            self.btn_match.setEnabled(True)
+            self.btn_calculate.setEnabled(False)
+            self.lbl_match_status.setText("")
+            self.progress.setVisible(False)
             self._load_raw_data()
+            QApplication.processEvents()
+            self.import_done.emit()
             self.tabs.setCurrentIndex(0)  # Switch to raw data tab
         except Exception as e:
             QMessageBox.warning(self, "导入失败", f"无法导入Excel文件:\n{e}")
@@ -241,11 +306,13 @@ class DiscountCalcWidget(QWidget):
 
         self._last_shop_type = dlg.get_shop_type()
         self._last_commission_table = dlg.get_commission_table()
+        self._last_exchange_rate = self.get_exchange_rate()
         self.btn_match.setEnabled(False)
         self.btn_calculate.setEnabled(False)
         self.lbl_match_status.setText("匹配中...")
         self.progress.setVisible(True)
-        self.progress.setRange(0, 0)  # Indeterminate
+        self.progress.setRange(0, 1)  # Will be updated by progress signal
+        self.progress.setValue(0)
 
         # Emit signal for MainWindow to handle
         self.calculate_requested.emit()
@@ -259,16 +326,11 @@ class DiscountCalcWidget(QWidget):
         dlg = CalcSettingsDialog(
             self,
             last_strategy=self._last_strategy,
-            last_rate=self._last_exchange_rate,
-            last_rate_realtime=self._last_rate_realtime,
-            commission_table=self._last_commission_table,
         )
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
 
         self._last_strategy = dlg.get_strategy()
-        self._last_exchange_rate = dlg.get_exchange_rate()
-        self._last_rate_realtime = dlg.is_rate_realtime()
         self.btn_calculate.setEnabled(False)
         self.progress.setVisible(True)
 
@@ -304,15 +366,14 @@ class DiscountCalcWidget(QWidget):
         """Load and display raw imported data in the raw_table"""
         rows = self._svc.db.get_import_rows()
         if not rows:
-            self._raw_data_rows = []
-            self.raw_table.setRowCount(0)
+            self.raw_table.clear_data()
             return
 
         # col_indices maps to: row_number, brand, category, wb_article, seller_sku, barcode,
         #                       wb_stock, seller_stock, turnover, current_price, current_discount,
         #                       new_price, new_discount
         col_indices = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 11, 13]
-        self._raw_data_rows = []
+        data_rows = []
         for row in rows:
             extracted = [row[idx] if idx < len(row) else "" for idx in col_indices]
             # Calculate 折后价格: current_price * (1 - current_discount / 100)
@@ -329,128 +390,16 @@ class DiscountCalcWidget(QWidget):
             discounted = round(price * (1 - discount / 100), 2) if price and discount else price
             # Insert 折后价格 after current_discount (at index 11)
             extracted.insert(11, f"{discounted:.2f}" if discounted else "")
-            self._raw_data_rows.append(extracted)
-        self._populate_raw_table()
-
-    def _populate_raw_table(self):
-        """Populate raw_table with filtered/sorted data"""
-        if not self._raw_data_rows:
-            self.raw_table.setRowCount(0)
-            return
-        data = list(self._raw_data_rows)
-        # Column filters
-        for col_idx, allowed_values in self._raw_col_filters.items():
-            if not allowed_values:
-                continue
-            data = [row for row in data
-                    if str(row[col_idx] if col_idx < len(row) else "").strip() in allowed_values]
-        # Sort
-        if 0 <= self._raw_sort_col:
-            col = self._raw_sort_col
-            reverse = self._raw_sort_order == Qt.SortOrder.DescendingOrder
-            def sort_key(row):
-                val = row[col] if col < len(row) else ""
-                try:
-                    return (0, float(val))
-                except (ValueError, TypeError):
-                    return (1, str(val))
-            data.sort(key=sort_key, reverse=reverse)
-        # Populate
-        headers = ["行号", "品牌", "类目", "WB货号", "卖家货号", "条码",
-                   "WB库存", "卖家库存", "周转率", "当前价格", "当前折扣", "折后价格",
-                   "新价格", "新折扣"]
-        self.raw_table.setRowCount(len(data))
-        self.raw_table.setColumnCount(len(headers))
-        self.raw_table.setHorizontalHeaderLabels(headers)
-        for i, row in enumerate(data):
-            for j in range(len(headers)):
-                val = row[j] if j < len(row) else ""
-                text = str(val) if val is not None else ""
-                item = QTableWidgetItem(text)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.raw_table.setItem(i, j, item)
-        raw_header = self.raw_table.horizontalHeader()
-        raw_header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        raw_header.setStretchLastSection(True)
-
-    def _on_raw_header_clicked(self, col_idx):
-        if col_idx == 0:
-            return
-        if self._raw_sort_col == col_idx:
-            if self._raw_sort_order == Qt.SortOrder.AscendingOrder:
-                self._raw_sort_order = Qt.SortOrder.DescendingOrder
-            else:
-                self._raw_sort_col = -1
-                self._raw_sort_order = Qt.SortOrder.AscendingOrder
-        else:
-            self._raw_sort_col = col_idx
-            self._raw_sort_order = Qt.SortOrder.AscendingOrder
-        if self._raw_sort_col >= 0:
-            self.raw_table.horizontalHeader().setSortIndicator(self._raw_sort_col, self._raw_sort_order)
-        self._populate_raw_table()
-
-    def _on_raw_header_context_menu(self, pos):
-        col_idx = self.raw_table.horizontalHeader().logicalIndexAt(pos)
-        if col_idx < 0:
-            return
-        global_pos = self.raw_table.horizontalHeader().mapToGlobal(pos)
-        self._show_raw_filter_menu(col_idx, global_pos)
-
-    def _show_raw_filter_menu(self, col_idx, global_pos):
-        if not self._raw_data_rows or col_idx >= len(self._raw_data_rows[0]):
-            return
-        headers_count = self.raw_table.columnCount()
-        if col_idx >= headers_count:
-            return
-        from PySide6.QtGui import QAction, QActionGroup
-        header_name = self.raw_table.horizontalHeaderItem(col_idx)
-        header_text = header_name.text() if header_name else f"列{col_idx}"
-        unique_values = sorted(set(
-            str(row[col_idx] if col_idx < len(row) else "").strip()
-            for row in self._raw_data_rows
-        ))
-        if not unique_values:
-            return
-        menu = QMenu(self)
-        menu.setWindowTitle(f"筛选: {header_text}")
-        select_all_action = QAction("全选", self)
-        clear_action = QAction("清除筛选", self)
-        menu.addAction(select_all_action)
-        menu.addAction(clear_action)
-        menu.addSeparator()
-        current_allowed = self._raw_col_filters.get(col_idx)
-        group = QActionGroup(self)
-        group.setExclusive(False)
-        val_actions = {}
-        for val in unique_values:
-            display = val if val else "(空)"
-            action = QAction(display, self)
-            action.setCheckable(True)
-            if current_allowed is None:
-                action.setChecked(True)
-            else:
-                action.setChecked(val in current_allowed)
-            menu.addAction(action)
-            group.addAction(action)
-            val_actions[action] = val
-        menu.addSeparator()
-        apply_action = QAction("✓ 应用筛选", self)
-        menu.addAction(apply_action)
-        chosen = menu.exec(global_pos)
-        if chosen == apply_action:
-            checked_values = set(v for a, v in val_actions.items() if a.isChecked())
-            if len(checked_values) == len(unique_values) or not checked_values:
-                self._raw_col_filters.pop(col_idx, None)
-            else:
-                self._raw_col_filters[col_idx] = checked_values
-            self._populate_raw_table()
-        elif chosen in (select_all_action, clear_action):
-            self._raw_col_filters.pop(col_idx, None)
-            self._populate_raw_table()
+            data_rows.append(extracted)
+        self.raw_table.populate(data_rows)
 
     def get_exchange_rate(self) -> float:
         """Returns the exchange rate to use (CNY→RUB)"""
-        return self._last_exchange_rate
+        if self.rb_rate_specified.isChecked():
+            return self.spin_rate.value()
+        from src.services.exchange_rate import ExchangeRateService
+        rate = ExchangeRateService().get_cny_to_rub()
+        return rate if rate > 0 else 12.0
 
     def set_match_result(self, count: int):
         """Called by MainWindow after match completes."""
@@ -466,9 +415,14 @@ class DiscountCalcWidget(QWidget):
         self.btn_calculate.setEnabled(True)
         self.progress.setVisible(False)
         self.lbl_file.setText(f"已计算 {count} 条结果")
+        self._calc_done = True  # 标记已完成过计算，参数修改后可重算
 
     def is_matched(self) -> bool:
         return self._is_matched
+
+    def has_calc_done(self) -> bool:
+        """是否已完成过计算（参数修改后可直接重算）"""
+        return getattr(self, '_calc_done', False)
 
     def get_match_count(self) -> int:
         return self._match_count
@@ -491,3 +445,72 @@ class DiscountCalcWidget(QWidget):
 
     def get_currency(self) -> str:
         return getattr(self, '_last_currency', 'CNY')
+
+    # ── 筛选功能 ──
+
+    def _all_tables(self):
+        """Return all 4 table views."""
+        return [self.raw_table, self.match_table, self.calc_table, self.result_table]
+
+    def _on_search_changed(self, text: str):
+        """Live search — applied to all 4 tables."""
+        for tbl in self._all_tables():
+            tbl._proxy.set_search_text(text)
+        self._update_filter_count()
+
+    def _apply_filters(self):
+        """Apply all active filters to all 4 tables."""
+        for tbl in self._all_tables():
+            proxy = tbl._proxy
+            proxy.clear_all_filters()
+
+            # Re-apply search text
+            search = self.search_input.text().strip()
+            if search:
+                proxy.set_search_text(search)
+
+            # 盈亏额筛选: profit < threshold
+            if self.chk_profit_filter.isChecked():
+                threshold = self.spin_profit_threshold.value()
+                profit_col = self._find_column(tbl, "profit")
+                if profit_col is not None:
+                    proxy.set_numeric_filter(profit_col, "<", threshold)
+
+            # 未匹配SKU筛选: cost_matched == False (displayed as "❌")
+            if self.chk_unmatched.isChecked():
+                cost_col = self._find_column(tbl, "cost_matched")
+                if cost_col is not None:
+                    proxy.set_column_filter(cost_col, {"❌"})
+
+        self._update_filter_count()
+
+    def _update_filter_count(self):
+        """Update the filter count label (from active tab)."""
+        current = self.tabs.currentWidget()
+        if not hasattr(current, '_proxy'):
+            return
+        total = current._model.rowCount()
+        visible = current._proxy.rowCount()
+        has_filter = (self.chk_profit_filter.isChecked()
+                      or self.chk_unmatched.isChecked()
+                      or self.search_input.text().strip())
+        if has_filter:
+            self.lbl_filter_count.setText(f"筛选结果: {visible}/{total} 条")
+        else:
+            self.lbl_filter_count.setText("")
+
+    def _clear_filters(self):
+        """Clear all filters on all 4 tables."""
+        self.chk_profit_filter.setChecked(False)
+        self.chk_unmatched.setChecked(False)
+        self.search_input.clear()
+        for tbl in self._all_tables():
+            tbl._proxy.clear_all_filters()
+        self.lbl_filter_count.setText("")
+
+    def _find_column(self, table, col_key: str) -> int | None:
+        """Find column index by key in a table's model."""
+        for i, (key, _, _) in enumerate(table._model.COLUMNS):
+            if key == col_key:
+                return i
+        return None

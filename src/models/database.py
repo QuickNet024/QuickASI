@@ -3,6 +3,7 @@
 
 import sqlite3
 import os
+import logging
 from typing import List, Optional, Dict, Any
 from contextlib import contextmanager
 from datetime import datetime
@@ -10,8 +11,56 @@ from datetime import datetime
 from src.models.product import Product
 from src.models.commission import Commission, CommissionTableInfo
 
+logger = logging.getLogger(__name__)
+
 # Register datetime adapter for Python 3.12+
 sqlite3.register_adapter(datetime, lambda dt: dt.isoformat())
+
+
+def _ensure_products_unique(conn):
+    """确保 products 表有 UNIQUE(sku_code, sheet_name) 约束（修复旧数据库）"""
+    indexes = conn.execute("PRAGMA index_list('products')").fetchall()
+    has_unique = any('unique' in str(idx).lower() for idx in indexes)
+    if has_unique:
+        return
+    # 重建表以添加UNIQUE约束
+    conn.execute("ALTER TABLE products RENAME TO products_old")
+    conn.execute("""
+        CREATE TABLE products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku_code TEXT NOT NULL,
+            sheet_name TEXT NOT NULL,
+            distribution_price REAL DEFAULT 0,
+            dimensions TEXT DEFAULT '',
+            weight REAL DEFAULT 0,
+            category TEXT DEFAULT '',
+            chinese_name TEXT DEFAULT '',
+            brand TEXT DEFAULT '',
+            inventory INTEGER DEFAULT 0,
+            synced_at TIMESTAMP,
+            image_file_token TEXT DEFAULT '',
+            image_local_path TEXT DEFAULT '',
+            original_price REAL DEFAULT 0,
+            supplier TEXT DEFAULT '',
+            remarks TEXT DEFAULT '',
+            inventory_status TEXT DEFAULT '',
+            raw_sync_data TEXT DEFAULT '',
+            UNIQUE(sku_code, sheet_name)
+        )
+    """)
+    # 迁移旧数据（只迁移两表共有的列）
+    old_cols = [r[1] for r in conn.execute("PRAGMA table_info('products_old')").fetchall()]
+    common_cols = [c for c in ['sku_code', 'sheet_name', 'distribution_price', 'dimensions',
+                                'weight', 'category', 'chinese_name', 'brand', 'inventory',
+                                'synced_at', 'image_file_token', 'image_local_path',
+                                'original_price', 'supplier', 'remarks', 'inventory_status',
+                                'raw_sync_data'] if c in old_cols]
+    col_str = ', '.join(common_cols)
+    conn.execute(f"INSERT OR IGNORE INTO products ({col_str}) SELECT {col_str} FROM products_old")
+    conn.execute("DROP TABLE products_old")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku_code)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_products_sheet ON products(sheet_name)")
+    logger.info("已修复 products 表 UNIQUE 约束")
 
 
 class DatabaseManager:
@@ -126,6 +175,8 @@ class DatabaseManager:
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_products_sku ON products(sku_code)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_products_sheet ON products(sheet_name)")
+        # 检查UNIQUE约束是否存在（旧数据库可能没有）
+        _ensure_products_unique(conn)
 
     @staticmethod
     def _create_commissions_table(conn):
@@ -213,6 +264,7 @@ class DatabaseManager:
                 category_matched INTEGER DEFAULT 0,
                 matched_product_id INTEGER,
                 product_cost REAL,
+                distribution_price REAL,
                 product_category TEXT DEFAULT '',
                 dimensions TEXT DEFAULT '',
                 weight REAL,
@@ -230,6 +282,10 @@ class DatabaseManager:
                 min_price REAL,
                 target_discount INTEGER,
                 target_price REAL,
+                cbase REAL,
+                crisk REAL,
+                r_total REAL,
+                total_fixed REAL,
                 calc_batch TEXT DEFAULT ''
             )
         """)
@@ -300,6 +356,11 @@ class DatabaseManager:
             ("target_discount", "INTEGER", "NULL"),
             ("target_price", "REAL", "NULL"),
             ("weight", "REAL", "NULL"),
+            ("distribution_price", "REAL", "NULL"),
+            ("cbase", "REAL", "NULL"),
+            ("crisk", "REAL", "NULL"),
+            ("r_total", "REAL", "NULL"),
+            ("total_fixed", "REAL", "NULL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE calc_results ADD COLUMN {col_name} {col_type} DEFAULT {col_default}")
@@ -753,7 +814,7 @@ class DatabaseManager:
             if batch:
                 rows = conn.execute("SELECT * FROM import_rows WHERE import_batch = ? ORDER BY row_number", (batch,)).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM import_rows ORDER BY id DESC").fetchall()
+                rows = conn.execute("SELECT * FROM import_rows ORDER BY id ASC").fetchall()
             return rows
 
     def get_import_row_count(self) -> int:
@@ -776,7 +837,8 @@ class DatabaseManager:
         if not results:
             return 0
         data = [(r.import_row_id, int(r.sku_matched), int(r.category_matched),
-                 r.matched_product_id, r.product_cost, r.product_category,
+                 r.matched_product_id, r.product_cost, r.distribution_price,
+                 r.product_category,
                  r.dimensions, r.weight, r.inventory, r.inventory_status,
                  r.seller_stock, r.wb_stock,
                  r.commission_rate, r.commission_source,
@@ -787,36 +849,39 @@ class DatabaseManager:
         with self._get_conn() as conn:
             conn.executemany("""
                 INSERT INTO calc_results (import_row_id, sku_matched, category_matched,
-                    matched_product_id, product_cost, product_category,
+                    matched_product_id, product_cost, distribution_price, product_category,
                     dimensions, weight, inventory, inventory_status,
                     seller_stock, wb_stock,
                     commission_rate, commission_source,
                     discounted_price, shipping_fee, breakeven, profit,
                     max_discount, min_price, target_discount, target_price, calc_batch)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, data)
         return len(data)
 
     def get_calc_results(self, batch: str = None) -> list:
         """获取计算结果。返回元组列表，列顺序固定：
         (0=id, 1=import_row_id, 2=sku_matched, 3=category_matched,
-         4=matched_product_id, 5=product_cost, 6=product_category,
-         7=dimensions, 8=weight,
-         9=inventory, 10=inventory_status,
-         11=seller_stock, 12=wb_stock,
-         13=commission_rate, 14=commission_source,
-         15=discounted_price, 16=shipping_fee,
-         17=breakeven, 18=profit, 19=max_discount, 20=min_price,
-         21=target_discount, 22=target_price,
-         23=calc_batch)
+         4=matched_product_id, 5=product_cost, 6=distribution_price,
+         7=product_category, 8=dimensions, 9=weight,
+         10=inventory, 11=inventory_status,
+         12=seller_stock, 13=wb_stock,
+         14=commission_rate, 15=commission_source,
+         16=discounted_price, 17=shipping_fee,
+         18=breakeven, 19=profit, 20=max_discount, 21=min_price,
+         22=target_discount, 23=target_price,
+         24=cbase, 25=crisk, 26=r_total, 27=total_fixed,
+         28=calc_batch)
         """
         sql = """SELECT id, import_row_id, sku_matched, category_matched,
-                 matched_product_id, product_cost, product_category,
+                 matched_product_id, product_cost, distribution_price,
+                 product_category,
                  dimensions, weight, inventory, inventory_status,
                  seller_stock, wb_stock,
                  commission_rate, commission_source,
                  discounted_price, shipping_fee, breakeven, profit,
                  max_discount, min_price, target_discount, target_price,
+                 cbase, crisk, r_total, total_fixed,
                  calc_batch
                  FROM calc_results"""
         with self._get_conn() as conn:

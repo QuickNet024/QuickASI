@@ -11,8 +11,27 @@ logger = logging.getLogger(__name__)
 
 # Default shipping configs
 _DEFAULTS = {
-    "wb_cross_border": {"base_fee": 8.0, "rate_per_unit": 2.0, "ceil_volume": True},
-    "wb_local": {"base_fee": 32.0, "rate_per_unit": 14.0, "ceil_volume": True},
+    "wb_cross_border": {
+        "base_fee": 8.0,
+        "rate_per_unit": 2.0,
+        "ceil_volume": True,
+        "display_name": "WB平台-跨境-FBS(国内发货)",
+        "enabled": True,
+    },
+    "wb_local": {
+        "base_fee": 32.0,
+        "rate_per_unit": 14.0,
+        "ceil_volume": True,
+        "display_name": "WB平台-跨境-FBS(本土发货)",
+        "enabled": True,
+    },
+    "wb_fbs_china_warehouse": {
+        "base_fee": 0.0,
+        "rate_per_unit": 0.0,
+        "ceil_volume": True,
+        "display_name": "WB平台-跨境-FBW(中国仓)",
+        "enabled": False,  # 预留，暂未实现
+    },
 }
 
 
@@ -31,6 +50,12 @@ class ShippingService:
         Returns:
             Shipping fee in the shop's currency (¥ for cross_border, ₽ for local)
         """
+        # Check if template is enabled
+        defaults = _DEFAULTS.get(shop_type, {})
+        if not defaults.get("enabled", True):
+            logger.warning(f"Shipping template '{shop_type}' is not enabled, using default cross_border")
+            shop_type = "wb_cross_border"
+
         volume_l = l * w * h / 1000  # Volume in liters
 
         if shop_type == "wb_local":
@@ -52,15 +77,16 @@ class ShippingService:
             (shipping_fee: float, shop_type: str, currency: str)
         """
         fee = self.calc_fee(l, w, h, shop_type)
-        currency = "RUB" if shop_type == "wb_local" else "CNY"
+        currency = self.get_currency(shop_type)
         return (fee, shop_type, currency)
 
     def get_config(self, shop_type: str = "wb_cross_border") -> dict:
         """Get shipping config for a shop type from DB, with defaults."""
         defaults = _DEFAULTS.get(shop_type, _DEFAULTS["wb_cross_border"])
+        # Only include numeric config keys (not display_name, enabled)
+        result = {k: v for k, v in defaults.items() if k not in ("display_name", "enabled")}
         try:
             saved = self.db.get_all_config()
-            result = dict(defaults)
             for key in result:
                 db_key = f"shipping_{shop_type}_{key}"
                 if db_key in saved:
@@ -74,18 +100,56 @@ class ShippingService:
                         pass
             return result
         except Exception:
-            return dict(defaults)
+            return result
 
-    def save_config(self, shop_type: str, base_fee: float, rate_per_unit: float, ceil_volume: bool = True):
+    def save_config(self, shop_type: str, base_fee: float, rate_per_unit: float,
+                    ceil_volume: bool = True, currency: str = None):
         """Save shipping config for a shop type to DB."""
         self.db.save_config(f"shipping_{shop_type}_base_fee", str(base_fee))
         self.db.save_config(f"shipping_{shop_type}_rate_per_unit", str(rate_per_unit))
         self.db.save_config(f"shipping_{shop_type}_ceil_volume", str(ceil_volume))
+        if currency is not None:
+            self.db.save_config(f"shipping_{shop_type}_currency", currency)
         logger.info(f"Shipping config saved for {shop_type}: base={base_fee}, rate={rate_per_unit}")
 
     def get_currency(self, shop_type: str) -> str:
-        """Get currency for a shop type."""
+        """Get currency for a shop type, preferring saved value from DB."""
+        try:
+            saved = self.db.get_all_config()
+            db_key = f"shipping_{shop_type}_currency"
+            if db_key in saved:
+                return saved[db_key]
+        except Exception:
+            pass
         return "RUB" if shop_type == "wb_local" else "CNY"
+
+    _CURRENCY_DISPLAY = {"CNY": "CNY (¥)", "RUB": "RUB (₽)"}
+
+    def list_templates(self) -> list:
+        """Return all available shipping templates.
+
+        Returns:
+            List of dicts, each containing:
+            - key: str (e.g. "wb_cross_border")
+            - display_name: str (e.g. "WB平台-跨境-FBS(国内发货)")
+            - config: dict (base_fee, rate_per_unit, ceil_volume)
+            - currency: str ("CNY" or "RUB")
+            - currency_display: str ("CNY (¥)" or "RUB (₽)")
+            - enabled: bool
+        """
+        result = []
+        for key, defaults in _DEFAULTS.items():
+            config = self.get_config(key)
+            currency = self.get_currency(key)
+            result.append({
+                "key": key,
+                "display_name": defaults.get("display_name", key),
+                "config": config,
+                "currency": currency,
+                "currency_display": self._CURRENCY_DISPLAY.get(currency, currency),
+                "enabled": defaults.get("enabled", True),
+            })
+        return result
 
     @staticmethod
     def detect_shop_type(commission_table: str) -> str:

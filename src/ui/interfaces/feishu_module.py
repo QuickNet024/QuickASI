@@ -210,11 +210,26 @@ class _FeishuWidget(QWidget):
         if self._signals:
             self._signals.sync_finished.emit()
             self._signals.stats_changed.emit()
+        if count > 0:
+            sheet_names = ", ".join(sheets) if sheets else ""
+            msg = f"同步成功：{count} 条产品"
+            if sheet_names:
+                msg += f"\n已同步Sheet: {sheet_names}"
+            QMessageBox.information(self, "同步完成", msg)
+        else:
+            QMessageBox.warning(self, "同步失败",
+                "同步完成但未获取到任何产品数据。\n\n"
+                "可能原因：\n"
+                "• 飞书表格数据量较大，服务端未就绪\n"
+                "• API配置错误或表格Token无效\n"
+                "• 网络连接不稳定\n\n"
+                "建议：稍后重试，或检查API设置。")
 
     def _on_error(self, err):
         self._reset_sync_button()
         self.lbl_count.setText("同步失败")
-        QMessageBox.warning(self, "飞书同步失败", err)
+        self.lbl_sync_time.setText("上次同步: 失败")
+        QMessageBox.warning(self, "飞书同步失败", f"{err}\n\n请检查API设置和网络连接。")
 
     def _on_cancel(self):
         """用户手动取消同步"""

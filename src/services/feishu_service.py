@@ -122,7 +122,7 @@ class FeishuService:
         self._token = None
         self._abort = False   # 同步中止标记
         self._consecutive_failures = 0  # 连续失败计数
-        self._max_consecutive_failures = 5  # 连续失败阈值，超过后停止
+        self._max_consecutive_failures = 20  # 连续失败阈值，提高以避免并发Sheet互相连带中止
 
     # ═══ 配置访问接口 ═══════════════════════════
 
@@ -280,6 +280,9 @@ class FeishuService:
         # 重置中止状态
         self._abort = False
         self._consecutive_failures = 0
+        # 清空旧数据，保证同步后与飞书完全一致
+        self.db.clear_products()
+        logger.info("已清空旧产品数据")
 
         self.get_tenant_token()
         sheets = self.get_all_sheets()
@@ -305,10 +308,13 @@ class FeishuService:
         logger.debug(f"使用列映射: {list(col_map.keys())}")
 
         # ── 阶段1: 尝试批量获取（单次 API 调用） ──
+        # 使用实际列数而非 ZZ(702列)，避免数据量过大导致 504 超时
         ranges = []
         for sheet_id, title, grid in active_sheets:
             row_count = grid.get("row_count", 10000)
-            ranges.append(f"{sheet_id}!A1:ZZ{row_count}")
+            col_count = min(grid.get("column_count", 52), 52)
+            col_str = self._col_letter(col_count)
+            ranges.append(f"{sheet_id}!A1:{col_str}{row_count}")
 
         logger.info(f"阶段1: 批量获取 {len(ranges)} 个 Range")
 
@@ -395,7 +401,9 @@ class FeishuService:
                 logger.error(f"Failed to fetch sheet '{title}': {e}")
                 return title, []
 
-        with ThreadPoolExecutor(max_workers=min(self._sync_thread_count, sheet_count)) as pool:
+        # 降低并发数避免同一文档被并发阻塞（飞书官方建议）
+        fallback_threads = min(2, sheet_count)
+        with ThreadPoolExecutor(max_workers=fallback_threads) as pool:
             futures = {pool.submit(_fetch_one, item): item[1] for item in active_sheets}
 
             for future in as_completed(futures):
@@ -505,16 +513,30 @@ class FeishuService:
         return tokens
 
     def _filter_incremental(self, tokens: Dict[str, Tuple[str, str]]) -> Dict[str, Tuple[str, str]]:
-        """增量过滤: 跳过本地已存在且 token 未变的图片"""
+        """增量过滤: 基于DB中已存储的fileToken和本地文件对比，跳过已下载的图片"""
+        existing_tokens = set()
+        try:
+            with self.db._get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT DISTINCT image_file_token FROM products WHERE image_file_token != ''"
+                ).fetchall()
+                existing_tokens = {r[0] for r in rows if r[0]}
+        except Exception:
+            pass
+
         cache_dir = self._resolve_image_dir()
         filtered = {}
+        skipped_file = 0
         for file_token, (sku, col) in tokens.items():
-            local_path = os.path.join(cache_dir, f"{file_token}.png")
-            if os.path.exists(local_path):
-                # 本地文件存在 — 增量模式下跳过
-                # 未来可通过 DB 记录 file_token hash 实现更精确的变更检测
-                continue
+            if file_token in existing_tokens:
+                local_path = os.path.join(cache_dir, f"{file_token}.png")
+                if os.path.exists(local_path):
+                    skipped_file += 1
+                    continue
             filtered[file_token] = (sku, col)
+
+        if skipped_file > 0:
+            logger.info(f"增量过滤: 跳过 {skipped_file} 个已下载的图片，{len(filtered)} 个需要下载")
         return filtered
 
     def _resolve_image_dir(self) -> str:
@@ -582,6 +604,21 @@ class FeishuService:
                     logger.error(f"Image download batch error: {e}")
                 if progress_cb:
                     progress_cb(downloaded[0], total, f"图片: {downloaded[0]}/{total}")
+
+        # 批量更新DB中产品的image_local_path
+        try:
+            cache_dir = self._resolve_image_dir()
+            with self.db._get_conn() as conn:
+                for file_token in token_list:
+                    local_path = os.path.join(cache_dir, f"{file_token}.png")
+                    if os.path.exists(local_path):
+                        conn.execute(
+                            "UPDATE products SET image_local_path = ? WHERE image_file_token = ?",
+                            (local_path, file_token)
+                        )
+            logger.debug(f"Updated image_local_path for {downloaded[0]} products")
+        except Exception as e:
+            logger.warning(f"Failed to update image_local_path: {e}")
 
         logger.info(f"Image sync done: {downloaded[0]} downloaded, {failed[0]} failed, {total} total")
 
@@ -838,8 +875,13 @@ class FeishuService:
                     self._abort = True
                     raise SyncAbortException(
                         f"连续 {self._consecutive_failures} 次请求失败，已停止同步。最后错误: {e}")
+                # "Data not ready" 需要更长等待时间（飞书服务端准备数据需要时间）
                 if attempt < self._retry_count - 1:
-                    time.sleep(self._retry_delay)
+                    delay = self._retry_delay
+                    if "not ready" in str(e).lower():
+                        delay = min(3.0 * (attempt + 1), 10.0)  # 递增: 3s, 6s, 9s
+                        logger.info(f"飞书数据未就绪，等待 {delay:.0f} 秒后重试...")
+                    time.sleep(delay)
         raise last_err  # type: ignore[misc]
 
     def _raw_batch_get_ranges(self, ranges: List[str]) -> List[dict]:

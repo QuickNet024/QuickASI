@@ -243,7 +243,7 @@ QComboBox QAbstractItemView::item:hover {
 }
 
 /* ── Tables ── */
-QTableWidget {
+QTableView {
     background: #FFFFFF;
     alternate-background-color: #F9F9F9;
     gridline-color: #E8E8E8;
@@ -254,11 +254,11 @@ QTableWidget {
     outline: none;
     font-size: 13px;
 }
-QTableWidget::item {
+QTableView::item {
     padding: 8px 14px;
     border-bottom: 1px solid #F0F0F0;
 }
-QTableWidget::item:selected {
+QTableView::item:selected {
     background: #E0E7FF;
 }
 
@@ -549,11 +549,11 @@ QLabel[class="stat-label"] {
 }
 
 /* ── Result Table Header ── */
-QTableWidget#resultTable {
+QTableView#resultTable {
     border: 1px solid #E0E0E0;
     border-radius: 10px;
 }
-QTableWidget#resultTable QHeaderView::section {
+QTableView#resultTable QHeaderView::section {
     background: #F5F5F5;
     color: #555;
     font-weight: 600;
@@ -803,6 +803,24 @@ QPushButton[class="mini-btn"] {
 QPushButton[class="mini-btn"]:hover {
     background: #F0F0F0;
     color: #333;
+}
+
+/* ── Cell View Button (表格内查看按钮，必须覆盖全局QPushButton样式) ── */
+QPushButton#cellViewBtn {
+    font-size: 11px;
+    padding: 1px 4px;
+    border: 1px solid #A5B4FC;
+    border-radius: 3px;
+    background: #EEF2FF;
+    color: #4338CA;
+    min-height: 0px;
+    max-height: 18px;
+    min-width: 0px;
+    max-width: 40px;
+}
+QPushButton#cellViewBtn:hover {
+    background: #C7D2FE;
+    border-color: #4338CA;
 }
 
 /* ── Column Header Label (列映射表头) ── */

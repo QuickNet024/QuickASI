@@ -35,7 +35,8 @@ class CalcResultRow:
     category_matched: bool = False # 类目是否匹配
     matched_product_id: Optional[int] = None  # 匹配到的飞书产品ID
     # 匹配到的数据
-    product_cost: Optional[float] = None      # 分销价格 (RUB)
+    product_cost: Optional[float] = None      # 产品成本 (已转换为CNY或保持RUB)
+    distribution_price: Optional[float] = None # 原始分销价格 (RUB)
     product_category: str = ""                # 匹配到的产品类目
     dimensions: str = ""                      # 尺寸
     weight: Optional[float] = None            # 重量 (kg)

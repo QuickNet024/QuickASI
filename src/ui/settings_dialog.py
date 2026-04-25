@@ -19,7 +19,8 @@ class SettingsDialog(QDialog):
         ("dropship_fee", "代发费", " RUB", 1, 0, 500, 1),
         ("pack_fee", "包装费", " RUB", 1, 0, 200, 1),
         ("scan_fee", "平台扫码费", " RUB", 1, 0, 50, 0.5),
-        ("return_process_fee", "退货处理费(含取件)", " RUB", 1, 0, 500, 1),
+        ("return_pickup_fee", "退货取货点费", " RUB", 1, 0, 500, 1),
+        ("return_process_fee", "退货处理费(人工)", " RUB", 1, 0, 500, 1),
         ("ad_fixed", "广告固定支出", " RUB", 1, 0, 10000, 10),
     ]
 
@@ -33,6 +34,7 @@ class SettingsDialog(QDialog):
         ("ops_rate", "运营成本率", " %", 1, 0, 50, 0.5),
         ("ad_percent", "广告费率ACOS", " %", 1, 0, 100, 0.5),
         ("default_commission", "未匹配类目默认佣金率", " %", 1, 0, 100, 0.5),
+        ("target_profit_rate", "目标利润率", " %", 1, 0, 100, 0.5),
     ]
 
     def __init__(self, current_params: dict, parent=None):

@@ -8,13 +8,13 @@ WB亏损计算系统 — 版本管理
 升级模块时只改对应版本号即可。
 """
 
-APP_VERSION = "2.2.1"
+APP_VERSION = "2.3.1"
 APP_NAME = "WB亏损计算系统"
 
 # ═══ 接口模块版本 ═══════════════════════════════
 # key = module_id, value = 语义版本号
 MODULE_VERSIONS = {
-    "feishu":        "1.1.1",   # 飞书数据同步
+    "feishu":        "1.3.0",   # 飞书数据同步 — 同步数据一致性 + 增量图片下载
     "commission":    "1.0.0",   # 佣金数据
     "exchange_rate": "1.0.0",   # 汇率数据
     "shipping":      "1.0.0",   # 运费配置

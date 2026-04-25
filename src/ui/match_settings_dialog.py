@@ -7,15 +7,22 @@ from PySide6.QtWidgets import (
     QGroupBox, QDialogButtonBox
 )
 
+# shop_type → commission table name mapping
+_SHOP_TYPE_COMMISSION = {
+    "wb_cross_border": "commission_wb_cross_border",
+    "wb_local": "commission_wb_local",
+}
+
 
 class MatchSettingsDialog(QDialog):
-    """匹配前选择运费配置"""
+    """匹配前选择运费配置 — 动态显示 ShippingService 中的所有可用配置"""
 
     def __init__(self, parent=None, last_shop_type="wb_cross_border"):
         super().__init__(parent)
         self.setWindowTitle("匹配设置")
         self.setMinimumWidth(420)
-        self._shop_type = last_shop_type
+        self._radio_buttons = {}  # shop_type → QRadioButton
+        self._templates = []      # cached template list
         self._build_ui(last_shop_type)
 
     def _build_ui(self, last_shop_type):
@@ -26,29 +33,58 @@ class MatchSettingsDialog(QDialog):
         config_group = QGroupBox("运费配置")
         config_layout = QVBoxLayout(config_group)
 
-        self.rb_cross_border = QRadioButton("WB跨境 · 本土仓发货")
-        self.rb_cross_border.setChecked(True)
-
-        # Show config details
+        # Load templates from ShippingService
         try:
             from src.services.shipping_service import ShippingService
             svc = ShippingService()
-            cfg = svc.get_config("wb_cross_border")
-            detail = f"首升 ¥{cfg['base_fee']:.0f} + 续升 ¥{cfg['rate_per_unit']:.0f}/L"
+            self._templates = svc.list_templates()
         except Exception:
-            detail = "首升 ¥8 + 续升 ¥2/L"
-        lbl_detail = QLabel(f"    {detail}")
-
-        self.rb_local = QRadioButton("WB本土 · FBS (暂未开放)")
-        self.rb_local.setEnabled(False)  # v1.0.0 disabled
+            self._templates = [{
+                "key": "wb_cross_border",
+                "display_name": "WB平台-跨境-FBS(国内发货)",
+                "config": {"base_fee": 8.0, "rate_per_unit": 2.0},
+                "currency": "CNY",
+                "currency_display": "CNY (¥)",
+                "enabled": True,
+            }]
 
         grp = QButtonGroup(self)
-        grp.addButton(self.rb_cross_border)
-        grp.addButton(self.rb_local)
+        for tpl in self._templates:
+            key = tpl["key"]
+            display_name = tpl["display_name"]
+            cfg = tpl["config"]
+            currency_symbol = "₽" if tpl["currency"] == "RUB" else "¥"
+            enabled = tpl["enabled"]
 
-        config_layout.addWidget(self.rb_cross_border)
-        config_layout.addWidget(lbl_detail)
-        config_layout.addWidget(self.rb_local)
+            rb = QRadioButton(display_name)
+            rb.setEnabled(enabled)
+
+            # Config detail label
+            if enabled and cfg.get("base_fee", 0) > 0:
+                detail = f"    首升 {currency_symbol}{cfg['base_fee']:.0f} + 续升 {currency_symbol}{cfg['rate_per_unit']:.0f}/L"
+            elif not enabled:
+                detail = "    (暂未开放)"
+            else:
+                detail = ""
+            lbl = QLabel(detail)
+
+            # Pre-select the last used shop_type
+            if key == last_shop_type and enabled:
+                rb.setChecked(True)
+
+            grp.addButton(rb)
+            self._radio_buttons[key] = rb
+
+            config_layout.addWidget(rb)
+            config_layout.addWidget(lbl)
+
+        # If nothing was checked, check first enabled one
+        if not any(rb.isChecked() for rb in self._radio_buttons.values()):
+            for key, rb in self._radio_buttons.items():
+                if rb.isEnabled():
+                    rb.setChecked(True)
+                    break
+
         layout.addWidget(config_group)
 
         # ── 确认/取消按钮 ──
@@ -61,12 +97,13 @@ class MatchSettingsDialog(QDialog):
         layout.addWidget(btn_box)
 
     def get_shop_type(self) -> str:
-        if self.rb_cross_border.isChecked():
-            return "wb_cross_border"
+        """Return the selected shop_type key."""
+        for key, rb in self._radio_buttons.items():
+            if rb.isChecked():
+                return key
         return "wb_cross_border"  # default
 
     def get_commission_table(self) -> str:
+        """Return the commission table name for the selected shop_type."""
         shop_type = self.get_shop_type()
-        if shop_type == "wb_local":
-            return "commission_wb_local"
-        return "commission_wb_cross_border"
+        return _SHOP_TYPE_COMMISSION.get(shop_type, "commission_wb_cross_border")

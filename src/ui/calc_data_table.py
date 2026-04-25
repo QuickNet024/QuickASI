@@ -1,193 +1,181 @@
 # -*- coding: utf-8 -*-
 """计算数据表格组件 — 显示详细计算明细（运费、盈亏平衡、盈亏额等）"""
 
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QMenu
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QAction, QActionGroup
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QPushButton, QHeaderView
 
-# 列定义: (key, title, width)
-COLUMNS = [
+from src.ui.table_base import (
+    BaseTableModel,
+    BaseTableView,
+    COLOR_PROFIT_FG,
+    COLOR_LOSS_FG,
+)
+
+# ---------------------------------------------------------------------------
+# CalcDataModel
+# ---------------------------------------------------------------------------
+
+_COLUMNS = [
     ("row_number", "行号", 50),
     ("seller_sku", "卖家货号", 150),
     ("current_price", "当前价格", 80),
+    ("current_discount", "当前折扣", 70),
     ("discounted_price", "折后价格", 80),
     ("product_cost", "产品成本", 80),
     ("shipping_fee", "运费", 70),
+    ("cbase", "基础成本", 80),
+    ("crisk", "风险成本", 80),
+    ("r_total", "综合费率", 70),
+    ("total_fixed", "总固定成本", 80),
     ("breakeven", "盈亏平衡点", 90),
     ("profit", "盈亏额", 80),
     ("max_discount", "保本折扣", 70),
     ("target_discount", "目标折扣", 70),
     ("min_price", "保本价格", 80),
     ("target_price", "目标价格", 80),
+    ("_view", "操作", 56),
 ]
 
+_PCT_KEYS = {"current_discount", "max_discount", "target_discount"}
+_MONEY_KEYS = {
+    "current_price", "discounted_price", "product_cost",
+    "shipping_fee", "cbase", "crisk", "total_fixed",
+    "breakeven", "profit", "min_price", "target_price",
+}
 
-class CalcDataTable(QTableWidget):
-    """计算数据表格 — 显示详细的计算明细"""
+
+class CalcDataModel(BaseTableModel):
+    """计算数据表格模型。"""
+
+    COLUMNS = _COLUMNS
 
     def __init__(self, parent=None):
-        super().__init__(0, len(COLUMNS), parent)
-        self._setup_headers()
-        self._raw_display_data = []
+        super().__init__(self.COLUMNS, parent)
 
-        # 筛选/排序状态
-        self._sort_col = -1
-        self._sort_order = Qt.SortOrder.AscendingOrder
-        self._col_filters = {}
+    # -- 格式化 -------------------------------------------------------------
 
-        header = self.horizontalHeader()
-        header.setSectionsClickable(True)
-        header.setSortIndicatorShown(True)
-        header.sectionClicked.connect(self._on_header_clicked)
-        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        header.customContextMenuRequested.connect(self._on_header_context_menu)
+    def _format_value(self, row: int, col: int) -> str:
+        key = self._col_key(col)
+        val = self._col_value(self._data[row], col) if row < len(self._data) else None
 
-    def _setup_headers(self):
-        headers = [col[1] for col in COLUMNS]
-        self.setHorizontalHeaderLabels(headers)
-        header = self.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setStretchLastSection(True)
-        self.verticalHeader().setVisible(False)
-        self.setAlternatingRowColors(True)
-        self.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.setShowGrid(True)
+        if key == "_view":
+            return ""
 
-    def populate(self, data: list):
-        """Load calc display data into the table.
+        if key == "r_total":
+            try:
+                return f"{float(val) * 100:.2f}%"
+            except (ValueError, TypeError):
+                return str(val) if val else "-"
 
-        Each item is a dict with keys matching COLUMNS.
-        """
-        self._raw_display_data = data
-        self._apply_filters_and_populate()
-
-    def _filtered_data(self) -> list:
-        data = list(self._raw_display_data)
-        for col_idx, allowed_values in self._col_filters.items():
-            if not allowed_values or col_idx >= len(COLUMNS):
-                continue
-            key = COLUMNS[col_idx][0]
-            data = [d for d in data if str(d.get(key, "")).strip() in allowed_values]
-        if 0 <= self._sort_col < len(COLUMNS):
-            key = COLUMNS[self._sort_col][0]
-            reverse = self._sort_order == Qt.SortOrder.DescendingOrder
-            def sort_key(d):
-                val = d.get(key, "")
-                try:
-                    return (0, float(val))
-                except (ValueError, TypeError):
-                    return (1, str(val))
-            data.sort(key=sort_key, reverse=reverse)
-        return data
-
-    def _apply_filters_and_populate(self):
-        data = self._filtered_data()
-        self.setRowCount(len(data))
-        for row_idx, row_data in enumerate(data):
-            for col_idx, (key, _, _) in enumerate(COLUMNS):
-                val = row_data.get(key, "")
-                item = QTableWidgetItem(self._format_value(key, val))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                # Profit text color: green if positive, red if negative
-                if key == "profit" and isinstance(val, (int, float)):
-                    if val > 0:
-                        item.setForeground(QColor(56, 158, 13))
-                    elif val < 0:
-                        item.setForeground(QColor(207, 19, 34))
-                self.setItem(row_idx, col_idx, item)
-
-    def _format_value(self, key, val):
-        if val is None:
-            return "-"
-        # Percentage fields
-        if key in ("max_discount", "target_discount"):
+        if key in _PCT_KEYS:
             try:
                 return f"{int(float(val))}%"
             except (ValueError, TypeError):
                 return str(val) if val else "-"
-        # Monetary / float fields
-        if key in ("current_price", "discounted_price", "product_cost",
-                    "shipping_fee", "breakeven", "profit", "min_price",
-                    "target_price"):
+
+        if key in _MONEY_KEYS:
             try:
                 return f"{float(val):.2f}"
             except (ValueError, TypeError):
                 return str(val) if val else "-"
+
         return str(val) if val is not None and val != "" else "-"
 
-    def _on_header_clicked(self, col_idx: int):
-        if col_idx == 0:
-            return
-        if self._sort_col == col_idx:
-            if self._sort_order == Qt.SortOrder.AscendingOrder:
-                self._sort_order = Qt.SortOrder.DescendingOrder
-            else:
-                self._sort_col = -1
-                self._sort_order = Qt.SortOrder.AscendingOrder
-        else:
-            self._sort_col = col_idx
-            self._sort_order = Qt.SortOrder.AscendingOrder
-        if self._sort_col >= 0:
-            self.horizontalHeader().setSortIndicator(self._sort_col, self._sort_order)
-        self._apply_filters_and_populate()
+    # -- data() 覆写 (ForegroundRole for profit) ----------------------------
 
-    def _on_header_context_menu(self, pos):
-        col_idx = self.horizontalHeader().logicalIndexAt(pos)
-        if col_idx < 0 or col_idx >= len(COLUMNS):
-            return
-        global_pos = self.horizontalHeader().mapToGlobal(pos)
-        self._show_column_filter_menu(col_idx, global_pos)
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
 
-    def _show_column_filter_menu(self, col_idx: int, global_pos):
-        key = COLUMNS[col_idx][0]
-        header_name = COLUMNS[col_idx][1]
-        unique_values = sorted(set(
-            str(d.get(key, "")).strip()
-            for d in self._raw_display_data
-        ))
-        if not unique_values:
-            return
-        menu = QMenu(self)
-        menu.setWindowTitle(f"筛选: {header_name}")
-        select_all_action = QAction("全选", self)
-        clear_action = QAction("清除筛选", self)
-        menu.addAction(select_all_action)
-        menu.addAction(clear_action)
-        menu.addSeparator()
-        current_allowed = self._col_filters.get(col_idx)
-        group = QActionGroup(self)
-        group.setExclusive(False)
-        val_actions = {}
-        for val in unique_values:
-            display = val if val else "(空)"
-            action = QAction(display, self)
-            action.setCheckable(True)
-            if current_allowed is None:
-                action.setChecked(True)
-            else:
-                action.setChecked(val in current_allowed)
-            menu.addAction(action)
-            group.addAction(action)
-            val_actions[action] = val
-        menu.addSeparator()
-        apply_action = QAction("✓ 应用筛选", self)
-        menu.addAction(apply_action)
-        chosen = menu.exec(global_pos)
-        if chosen == apply_action:
-            checked_values = set(v for a, v in val_actions.items() if a.isChecked())
-            if len(checked_values) == len(unique_values) or not checked_values:
-                self._col_filters.pop(col_idx, None)
-            else:
-                self._col_filters[col_idx] = checked_values
-            self._apply_filters_and_populate()
-        elif chosen in (select_all_action, clear_action):
-            self._col_filters.pop(col_idx, None)
-            self._apply_filters_and_populate()
+        col = index.column()
+        key = self._col_key(col)
 
-    def clear_data(self):
-        self.setRowCount(0)
-        self._raw_display_data = []
-        self._col_filters.clear()
-        self._sort_col = -1
+        # _view 列完全交给 setIndexWidget
+        if key == "_view":
+            return None
+
+        # 前景色: profit 列正绿负红
+        if role == Qt.ItemDataRole.ForegroundRole and key == "profit":
+            val = self._col_value(self._data[index.row()], col) if index.row() < len(self._data) else None
+            if isinstance(val, (int, float)):
+                if val > 0:
+                    return COLOR_PROFIT_FG
+                elif val < 0:
+                    return COLOR_LOSS_FG
+            return None
+
+        return super().data(index, role)
+
+
+# ---------------------------------------------------------------------------
+# CalcDataTable
+# ---------------------------------------------------------------------------
+
+class CalcDataTable(BaseTableView):
+    """计算数据表格视图 — 使用 QTableView + CalcDataModel。"""
+
+    MATCH_COLUMN_KEYS = {"product_cost", "shipping_fee"}
+    CALC_COLUMN_KEYS = {
+        "breakeven", "profit", "max_discount", "target_discount",
+        "min_price", "target_price",
+    }
+
+    view_clicked = Signal(int)
+
+    def __init__(self, parent=None):
+        model = CalcDataModel()
+        super().__init__(model, parent)
+        self.setObjectName("calcTable")
+        self._filter_skip_keys = {"_view"}
+        self._init_view_column()
+
+    # -- 操作列固定宽度 -------------------------------------------------------
+
+    def _init_view_column(self):
+        """Set _view column as fixed width."""
+        view_col = len(self._model.COLUMNS) - 1
+        header = self.horizontalHeader()
+        header.setSectionResizeMode(view_col, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(view_col, 56)
+
+    def _auto_fit_columns(self):
+        """Override: auto-fit all columns except _view which stays fixed."""
+        super()._auto_fit_columns()
+        self._init_view_column()
+
+    def _rebuild_view_buttons(self):
+        """清除并重建所有可见行的查看按钮。"""
+        view_col = len(self._model.COLUMNS) - 1  # _view 最后一列 (index 17)
+
+        # 清除已有按钮
+        for row in range(self._proxy.rowCount()):
+            idx = self._proxy.index(row, view_col)
+            existing = self.indexWidget(idx)
+            if existing:
+                existing.deleteLater()
+
+        # 创建新按钮 — 紧凑尺寸，用独立QSS class覆盖全局按钮样式
+        for row in range(self._proxy.rowCount()):
+            proxy_idx = self._proxy.index(row, view_col)
+            source_idx = self._proxy.mapToSource(proxy_idx)
+            row_data = self._model.get_source_row_data(source_idx.row())
+
+            btn = QPushButton("查看")
+            btn.setObjectName("cellViewBtn")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda checked, rd=row_data: self._on_view_clicked(rd))
+            self.setIndexWidget(proxy_idx, btn)
+
+    def _on_view_clicked(self, row_data: dict):
+        idx = row_data.get("_data_index", -1)
+        self.view_clicked.emit(idx)
+
+    # -- 覆写 populate / _on_header_clicked 以重建按钮 ----------------------
+
+    def populate(self, data):
+        super().populate(data)
+        self._rebuild_view_buttons()
+
+    def _on_header_clicked(self, col):
+        super()._on_header_clicked(col)
+        self._rebuild_view_buttons()

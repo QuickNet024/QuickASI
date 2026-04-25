@@ -1,289 +1,202 @@
 ﻿# -*- coding: utf-8 -*-
-"""结果表格组件 - QTableWidget 带颜色标记 + 右键筛选 + 点击排序"""
+"""结果表格组件 — QTableView + BaseTableModel 架构，带多优先级行颜色 + 库存状态单元格覆盖。"""
 
-from typing import Optional
-
-from PySide6.QtWidgets import QTableWidget, QTableWidgetItem, QHeaderView, QMenu
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QAction, QActionGroup
 
-from src.services.excel_service import ProductRow
-
-
-# 颜色常量
-COLOR_PROFIT = QColor(230, 247, 230)    # #e6f7e6
-COLOR_LOSS = QColor(255, 230, 230)      # #ffe6e6
-COLOR_UNMATCHED = QColor(255, 230, 230) # #ffe6e6 (浅红色)
-COLOR_ROW_NO_SKU = QColor("#ffe6e6")      # 浅红色 — 未匹配SKU
-COLOR_ROW_NO_CATEGORY = QColor("#fff3e0")  # 浅橘黄色 — 未匹配类目
-COLOR_HEADER_BG = QColor(0, 21, 41)     # #001529
-COLOR_HEADER_FG = QColor(255, 255, 255)
-
-# 库存状态颜色 (matching ProductViewer)
-_STOCK_STATUS_COLORS = {
-    "货源充足": ("#e6f7e6", "#1a7a1a"),   # light green bg, dark green fg
-    "停止上架": ("#ffe6e6", "#c91a2a"),   # light red bg, dark red fg
-    "货源紧缺": ("#fff3cd", "#856404"),   # light yellow bg, dark yellow fg
-    "等待补货": ("#ffe8cc", "#b35900"),   # light orange bg, dark orange fg
-}
-
-# 列定义: (key, title, width)
-COLUMNS = [
-    ("seller_sku", "卖家货号", 150),
-    ("category", "类目", 80),
-    ("current_price", "当前价格", 80),
-    ("current_discount", "当前折扣", 70),
-    ("discounted_price", "折后价格", 80),
-    ("distribution_price", "分销价格", 90),
-    ("shipping_fee", "运费", 70),
-    ("seller_stock", "卖家库存", 70),
-    ("wb_stock", "平台库存", 70),
-    ("inventory_status", "库存状态", 90),
-    ("cost_matched", "SKU匹配状态", 90),
-    ("commission_source", "佣金匹配状态", 130),
-    ("product_cost", "产品成本", 80),
-    ("commission_rate", "佣金率", 60),
-    ("breakeven", "盈亏平衡", 80),
-    ("profit", "盈亏额", 80),
-    ("max_discount", "保本折扣", 70),
-    ("target_discount", "目标折扣", 70),
-    ("min_price", "保本价格", 80),
-    ("target_price", "目标价格", 80),
-]
+from src.ui.table_base import (BaseTableModel, BaseTableView,
+    STOCK_STATUS_COLORS, COLOR_PROFIT_FG, COLOR_LOSS_FG,
+    COLOR_ROW_NO_SKU, COLOR_ROW_NO_CATEGORY, COLOR_ROW_PROFIT, COLOR_ROW_LOSS)
 
 
-class ResultTable(QTableWidget):
-    """结果表格 - 颜色标记盈亏 + 右键筛选 + 点击排序"""
+# ---------------------------------------------------------------------------
+# ResultModel
+# ---------------------------------------------------------------------------
+
+class ResultModel(BaseTableModel):
+    """结果数据模型 — 20 列，多优先级行着色 + 库存状态单元格覆盖。"""
+
+    COLUMNS = [
+        ("seller_sku", "卖家货号", 150),
+        ("category", "类目", 80),
+        ("current_price", "当前价格", 80),
+        ("current_discount", "当前折扣", 70),
+        ("discounted_price", "折后价格", 80),
+        ("distribution_price", "分销价格", 90),
+        ("shipping_fee", "运费", 70),
+        ("seller_stock", "卖家库存", 70),
+        ("wb_stock", "平台库存", 70),
+        ("inventory_status", "库存状态", 90),
+        ("cost_matched", "SKU匹配状态", 90),
+        ("commission_source", "佣金匹配状态", 130),
+        ("product_cost", "产品成本", 80),
+        ("commission_rate", "佣金率", 60),
+        ("breakeven", "盈亏平衡", 80),
+        ("profit", "盈亏额", 80),
+        ("max_discount", "保本折扣", 70),
+        ("target_discount", "目标折扣", 70),
+        ("min_price", "保本价格", 80),
+        ("target_price", "目标价格", 80),
+    ]
 
     def __init__(self, parent=None):
-        super().__init__(0, len(COLUMNS), parent)
-        self._setup_headers()
-        self._results = []
+        super().__init__(self.COLUMNS, parent)
 
-        # 筛选/排序状态
-        self._sort_col = -1
-        self._sort_order = Qt.SortOrder.AscendingOrder
-        self._col_filters = {}   # col_idx → set(allowed_values)
-        self._raw_display_data = []  # list of display dicts
+    # -- 格式化 -------------------------------------------------------------
 
-        # Header setup for sort and filter
-        header = self.horizontalHeader()
-        header.setSectionsClickable(True)
-        header.setSortIndicatorShown(True)
-        header.sectionClicked.connect(self._on_header_clicked)
-        header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        header.customContextMenuRequested.connect(self._on_header_context_menu)
+    def _format_value(self, row: int, col: int) -> str:
+        col_key = self._col_key(col)
+        val = self._data[row].get(col_key) if row < len(self._data) else None
 
-    def _setup_headers(self):
-        headers = [col[1] for col in COLUMNS]
-        self.setHorizontalHeaderLabels(headers)
-        header = self.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignCenter)
-        header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setStretchLastSection(True)
-        # header and grid styles handled by QSS (#resultTable)
-        self.verticalHeader().setVisible(False)
-        self.setAlternatingRowColors(True)
-        self.setSelectionBehavior(QTableWidget.SelectRows)
-        self.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.setShowGrid(True)
-
-    def load_results(self, results: list):
-        """Load calculation results into the table.
-        Each result is a dict with keys matching COLUMNS."""
-        self._raw_display_data = results  # Store for filtering
-        self._apply_filters_and_populate()
-
-    def _filtered_data(self) -> list:
-        data = list(self._raw_display_data)
-        # Apply column filters
-        for col_idx, allowed_values in self._col_filters.items():
-            if not allowed_values or col_idx >= len(COLUMNS):
-                continue
-            key = COLUMNS[col_idx][0]
-            data = [d for d in data if str(d.get(key, "")).strip() in allowed_values]
-        # Apply sort
-        if 0 <= self._sort_col < len(COLUMNS):
-            key = COLUMNS[self._sort_col][0]
-            reverse = self._sort_order == Qt.SortOrder.DescendingOrder
-            def sort_key(d):
-                val = d.get(key, "")
-                try:
-                    return (0, float(val))
-                except (ValueError, TypeError):
-                    return (1, str(val))
-            data.sort(key=sort_key, reverse=reverse)
-        return data
-
-    def _apply_filters_and_populate(self):
-        data = self._filtered_data()
-        self.setRowCount(len(data))
-        for row_idx, row_data in enumerate(data):
-            cost_matched = row_data.get("cost_matched", False)
-            row_color = self._row_color(cost_matched, row_data.get("profit"), row_data.get("category_matched"))
-            for col_idx, (key, _, _) in enumerate(COLUMNS):
-                val = row_data.get(key, "")
-                item = QTableWidgetItem(self._format_value(key, val))
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                if row_color:
-                    item.setBackground(row_color)
-                # Profit text color
-                if key == "profit" and isinstance(val, (int, float)):
-                    if val > 0:
-                        item.setForeground(QColor(56, 158, 13))
-                    elif val < 0:
-                        item.setForeground(QColor(207, 19, 34))
-                # Inventory status background color
-                if key == "inventory_status" and val:
-                    colors = _STOCK_STATUS_COLORS.get(str(val))
-                    if colors:
-                        item.setBackground(QColor(colors[0]))
-                        item.setForeground(QColor(colors[1]))
-                self.setItem(row_idx, col_idx, item)
-
-    def _on_header_clicked(self, col_idx: int):
-        if col_idx == 0:
-            return
-        if self._sort_col == col_idx:
-            if self._sort_order == Qt.SortOrder.AscendingOrder:
-                self._sort_order = Qt.SortOrder.DescendingOrder
-            else:
-                self._sort_col = -1
-                self._sort_order = Qt.SortOrder.AscendingOrder
-        else:
-            self._sort_col = col_idx
-            self._sort_order = Qt.SortOrder.AscendingOrder
-        if self._sort_col >= 0:
-            self.horizontalHeader().setSortIndicator(self._sort_col, self._sort_order)
-        self._apply_filters_and_populate()
-
-    def _on_header_context_menu(self, pos):
-        col_idx = self.horizontalHeader().logicalIndexAt(pos)
-        if col_idx < 0 or col_idx >= len(COLUMNS):
-            return
-        global_pos = self.horizontalHeader().mapToGlobal(pos)
-        self._show_column_filter_menu(col_idx, global_pos)
-
-    def _show_column_filter_menu(self, col_idx: int, global_pos):
-        key = COLUMNS[col_idx][0]
-        header_name = COLUMNS[col_idx][1]
-        unique_values = sorted(set(
-            str(d.get(key, "")).strip()
-            for d in self._raw_display_data
-        ))
-        if not unique_values:
-            return
-        menu = QMenu(self)
-        menu.setWindowTitle(f"筛选: {header_name}")
-        select_all_action = QAction("全选", self)
-        clear_action = QAction("清除筛选", self)
-        menu.addAction(select_all_action)
-        menu.addAction(clear_action)
-        menu.addSeparator()
-        current_allowed = self._col_filters.get(col_idx)
-        group = QActionGroup(self)
-        group.setExclusive(False)
-        val_actions = {}
-        for val in unique_values:
-            display = val if val else "(空)"
-            action = QAction(display, self)
-            action.setCheckable(True)
-            if current_allowed is None:
-                action.setChecked(True)
-            else:
-                action.setChecked(val in current_allowed)
-            menu.addAction(action)
-            group.addAction(action)
-            val_actions[action] = val
-        menu.addSeparator()
-        apply_action = QAction("✓ 应用筛选", self)
-        menu.addAction(apply_action)
-        chosen = menu.exec(global_pos)
-        if chosen == apply_action:
-            checked_values = set(v for a, v in val_actions.items() if a.isChecked())
-            if len(checked_values) == len(unique_values) or not checked_values:
-                self._col_filters.pop(col_idx, None)
-            else:
-                self._col_filters[col_idx] = checked_values
-            self._apply_filters_and_populate()
-        elif chosen in (select_all_action, clear_action):
-            self._col_filters.pop(col_idx, None)
-            self._apply_filters_and_populate()
-
-    def clear_all_filters(self):
-        self._col_filters.clear()
-        self._sort_col = -1
-        header = self.horizontalHeader()
-        if header.isSortIndicatorShown():
-            header.setSortIndicator(-1, Qt.SortOrder.AscendingOrder)
-        self._apply_filters_and_populate()
-
-    def _row_color(self, cost_matched: bool, profit, category_matched=None) -> Optional[QColor]:
-        """Get row background color based on match status and profit."""
-        if not cost_matched:
-            return COLOR_ROW_NO_SKU
-        if category_matched is not None and not category_matched:
-            return COLOR_ROW_NO_CATEGORY
-        # Existing profit/loss logic
-        if isinstance(profit, (int, float)):
-            if profit > 0:
-                return COLOR_PROFIT
-            elif profit < 0:
-                return COLOR_LOSS
-        return None
-
-    def _format_value(self, key, val):
         if val is None:
             return "-"
-        if key in ("seller_stock", "wb_stock"):
+        if col_key in ("seller_stock", "wb_stock"):
             return str(val) if val else "-"
-        if key == "inventory_status":
+        if col_key == "inventory_status":
             return str(val) if val else "-"
-        # cost_matched: bool → ✅ / ❌
-        if key == "cost_matched":
+        if col_key == "cost_matched":
             return "✅" if val else "❌"
-        # distribution_price: float → .2f format
-        if key == "distribution_price":
+        if col_key == "commission_source":
+            return str(val) if val else "-"
+        if col_key == "distribution_price":
             try:
                 return f"{float(val):.2f}"
             except (ValueError, TypeError):
                 return "-"
-        # commission_source: already a Chinese string
-        if key == "commission_source":
-            return str(val) if val else "-"
-        # target_discount: integer percent
-        if key == "target_discount":
+        if col_key == "target_discount":
             try:
                 return f"{int(float(val))}%"
             except (ValueError, TypeError):
                 return "-"
-        # target_price: float .2f
-        if key == "target_price":
+        if col_key == "target_price":
             try:
                 return f"{float(val):.2f}"
             except (ValueError, TypeError):
                 return "-"
-        # existing formatting for other columns
-        if key in ("current_price", "discounted_price", "product_cost", "shipping_fee",
-                    "breakeven", "profit", "min_price"):
+        if col_key in ("current_price", "discounted_price", "product_cost", "shipping_fee",
+                        "breakeven", "profit", "min_price"):
             try:
                 return f"{float(val):.2f}"
             except (ValueError, TypeError):
                 return str(val) if val else "-"
-        if key in ("current_discount", "max_discount", "commission_rate"):
+        if col_key in ("current_discount", "max_discount", "commission_rate"):
             try:
-                v = int(float(val))
-                return f"{v}%"
+                return f"{int(float(val))}%"
             except (ValueError, TypeError):
                 return str(val) if val else "-"
         return str(val) if val else "-"
+
+    # -- 颜色 ---------------------------------------------------------------
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid():
+            return None
+
+        if role == Qt.ItemDataRole.DisplayRole:
+            return self._format_value(index.row(), index.column())
+
+        if role == Qt.ItemDataRole.TextAlignmentRole:
+            return Qt.AlignmentFlag.AlignCenter
+
+        if role == Qt.ItemDataRole.BackgroundRole:
+            return self._background(index)
+
+        if role == Qt.ItemDataRole.ForegroundRole:
+            return self._foreground(index)
+
+        return None
+
+    def _background(self, index):
+        """BackgroundRole — 多优先级行颜色 + 库存状态单元格覆盖。"""
+        row_data = self._data[index.row()]
+        col_key = self._col_key(index.column())
+        val = row_data.get(col_key)
+
+        # 1. 库存状态单元格覆盖 — 该单元格最高优先级
+        if col_key == "inventory_status" and val:
+            colors = STOCK_STATUS_COLORS.get(str(val))
+            if colors:
+                return colors[0]  # bg color
+
+        # 2. 行级颜色 (优先级: SKU未匹配 > 类目未匹配 > 盈利 > 亏损)
+        cost_matched = row_data.get("cost_matched", True)
+        if cost_matched is False:
+            return COLOR_ROW_NO_SKU
+
+        category_matched = row_data.get("category_matched", True)
+        if category_matched is False:
+            return COLOR_ROW_NO_CATEGORY
+
+        profit = row_data.get("profit")
+        if isinstance(profit, (int, float)):
+            if profit > 0:
+                return COLOR_ROW_PROFIT
+            elif profit < 0:
+                return COLOR_ROW_LOSS
+
+        return None  # QSS handles default + alternating
+
+    def _foreground(self, index):
+        """ForegroundRole — 利润列文字颜色 + 库存状态单元格文字颜色。"""
+        col_key = self._col_key(index.column())
+        row_data = self._data[index.row()]
+        val = row_data.get(col_key)
+
+        # 1. 库存状态单元格前景色
+        if col_key == "inventory_status" and val:
+            colors = STOCK_STATUS_COLORS.get(str(val))
+            if colors:
+                return colors[1]  # fg color
+
+        # 2. 利润列文字颜色
+        if col_key == "profit" and isinstance(val, (int, float)):
+            if val > 0:
+                return COLOR_PROFIT_FG
+            elif val < 0:
+                return COLOR_LOSS_FG
+
+        return None
+
+
+# ---------------------------------------------------------------------------
+# ResultTable
+# ---------------------------------------------------------------------------
+
+class ResultTable(BaseTableView):
+    """结果表格视图 — 继承 BaseTableView 的 3 态排序 + 右键列筛选。"""
+
+    MATCH_COLUMN_KEYS = {"distribution_price", "shipping_fee", "inventory_status",
+                         "cost_matched", "commission_source", "product_cost", "commission_rate"}
+    CALC_COLUMN_KEYS = {"breakeven", "profit", "max_discount", "target_discount",
+                        "min_price", "target_price"}
+
+    def __init__(self, parent=None):
+        model = ResultModel()
+        super().__init__(model, parent)
+        self.setObjectName("resultTable")
+        self._results = []  # Backward compat
+        self._set_column_widths()
+
+    def load_results(self, results: list):
+        self._results = results
+        self.populate(results)
 
     def get_results(self):
         return self._results
 
     def clear_results(self):
-        self.setRowCount(0)
         self._results = []
-        self._raw_display_data = []
-        self._col_filters.clear()
-        self._sort_col = -1
+        self.clear_data()
+
+    def clear_all_filters(self):
+        self._proxy.clear_all_filters()
+        self._sort_states.clear()
+        header = self.horizontalHeader()
+        header.setSortIndicatorShown(False)
+
+    def update_match_columns(self, data: list):
+        self._results = data
+        super().update_match_columns(data)
+
+    def update_calc_columns(self, data: list):
+        self._results = data
+        super().update_calc_columns(data)

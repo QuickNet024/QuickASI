@@ -23,6 +23,7 @@ class Config:
         "dropship_fee": 10.0,        # 代发费 (RUB)
         "pack_fee": 0.0,             # 包装费 (RUB)
         "scan_fee": 1.0,             # 平台扫码费 (RUB)
+        "return_pickup_fee": 0.0,    # 退货取货点费 (RUB)
         "return_process_fee": 10.0,  # 退货处理费 (RUB)
         "residual_loss_rate": 15.0,  # 退货残值损失率 (%)
         "damage_rate": 2.0,          # 货损率 (%)
