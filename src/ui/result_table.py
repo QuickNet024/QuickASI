@@ -13,28 +13,21 @@ from src.ui.table_base import (BaseTableModel, BaseTableView,
 # ---------------------------------------------------------------------------
 
 class ResultModel(BaseTableModel):
-    """结果数据模型 — 20 列，多优先级行着色 + 库存状态单元格覆盖。"""
+    """结果数据模型 — 精简后的运营结果视图。"""
 
     COLUMNS = [
         ("seller_sku", "卖家货号", 150),
-        ("category", "类目", 80),
-        ("current_price", "当前价格", 80),
-        ("current_discount", "当前折扣", 70),
+        ("category", "类目", 100),
+        ("current_price", "原价", 80),
         ("discounted_price", "折后价格", 80),
-        ("distribution_price", "分销价格", 90),
-        ("shipping_fee", "运费", 70),
-        ("seller_stock", "卖家库存", 70),
-        ("wb_stock", "平台库存", 70),
         ("inventory_status", "库存状态", 90),
-        ("cost_matched", "SKU匹配状态", 90),
-        ("commission_source", "佣金匹配状态", 130),
+        ("cost_matched", "SKU匹配", 72),
+        ("commission_source", "佣金匹配", 120),
         ("product_cost", "产品成本", 80),
-        ("commission_rate", "佣金率", 60),
-        ("breakeven", "盈亏平衡", 80),
+        ("shipping_fee", "运费", 70),
+        ("breakeven", "保本价", 80),
         ("profit", "盈亏额", 80),
-        ("max_discount", "保本折扣", 70),
         ("target_discount", "目标折扣", 70),
-        ("min_price", "保本价格", 80),
         ("target_price", "目标价格", 80),
     ]
 
@@ -49,19 +42,12 @@ class ResultModel(BaseTableModel):
 
         if val is None:
             return "-"
-        if col_key in ("seller_stock", "wb_stock"):
-            return str(val) if val else "-"
         if col_key == "inventory_status":
             return str(val) if val else "-"
         if col_key == "cost_matched":
             return "✅" if val else "❌"
         if col_key == "commission_source":
             return str(val) if val else "-"
-        if col_key == "distribution_price":
-            try:
-                return f"{float(val):.2f}"
-            except (ValueError, TypeError):
-                return "-"
         if col_key == "target_discount":
             try:
                 return f"{int(float(val))}%"
@@ -73,14 +59,9 @@ class ResultModel(BaseTableModel):
             except (ValueError, TypeError):
                 return "-"
         if col_key in ("current_price", "discounted_price", "product_cost", "shipping_fee",
-                        "breakeven", "profit", "min_price"):
+                        "breakeven", "profit", "target_price"):
             try:
                 return f"{float(val):.2f}"
-            except (ValueError, TypeError):
-                return str(val) if val else "-"
-        if col_key in ("current_discount", "max_discount", "commission_rate"):
-            try:
-                return f"{int(float(val))}%"
             except (ValueError, TypeError):
                 return str(val) if val else "-"
         return str(val) if val else "-"
@@ -164,10 +145,9 @@ class ResultModel(BaseTableModel):
 class ResultTable(BaseTableView):
     """结果表格视图 — 继承 BaseTableView 的 3 态排序 + 右键列筛选。"""
 
-    MATCH_COLUMN_KEYS = {"distribution_price", "shipping_fee", "inventory_status",
-                         "cost_matched", "commission_source", "product_cost", "commission_rate"}
-    CALC_COLUMN_KEYS = {"breakeven", "profit", "max_discount", "target_discount",
-                        "min_price", "target_price"}
+    MATCH_COLUMN_KEYS = {"shipping_fee", "inventory_status",
+                         "cost_matched", "commission_source", "product_cost"}
+    CALC_COLUMN_KEYS = {"breakeven", "profit", "target_discount", "target_price"}
 
     def __init__(self, parent=None):
         model = ResultModel()

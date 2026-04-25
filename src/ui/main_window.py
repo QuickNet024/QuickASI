@@ -39,6 +39,14 @@ PAGE_COMMISSIONS = 2
 PAGE_DISCOUNT_CALC = 3
 PAGE_SETTINGS = 4
 
+PAGE_CONTEXT = {
+    PAGE_SYNC: ("数据接口", "同步产品、佣金、汇率等基础数据，保证测算输入可靠。", "接口管理", "检查连接状态与同步结果"),
+    PAGE_PRODUCTS: ("产品资料", "查看飞书同步下来的产品资料、尺寸、库存与原始字段。", "产品数据", "核对 SKU、类目、库存状态"),
+    PAGE_COMMISSIONS: ("佣金资料", "维护 Wildberries 佣金表，为后续盈亏测算提供费率基础。", "佣金数据", "确认类目映射与默认佣金"),
+    PAGE_DISCOUNT_CALC: ("折扣测算", "完成导入、匹配、盈亏测算与结果导出，是运营日常的主工作区。", "核心流程", "建议按 步骤1 匹配 -> 步骤2 计算 执行"),
+    PAGE_SETTINGS: ("参数设置", "维护成本项、风险项与目标利润参数，统一团队测算口径。", "参数中心", "修改后将影响后续所有新计算"),
+}
+
 
 class _CalculateWorker(QThread):
     """Step 2 worker: Calculate profit/discount from matched results."""
@@ -59,6 +67,27 @@ class _CalculateWorker(QThread):
         except Exception as e:
             if not self.isInterruptionRequested():
                 logger.exception("_CalculateWorker error")
+                self.error.emit(str(e))
+
+
+class _ImportWorker(QThread):
+    """Async worker for Excel import so large files do not block the UI."""
+    finished = Signal(str, int)
+    error = Signal(str)
+
+    def __init__(self, svc, file_path: str):
+        super().__init__()
+        self.svc = svc
+        self.file_path = file_path
+
+    def run(self):
+        try:
+            count = self.svc.import_from_excel(self.file_path)
+            if not self.isInterruptionRequested():
+                self.finished.emit(self.file_path, count)
+        except Exception as e:
+            if not self.isInterruptionRequested():
+                logger.exception("_ImportWorker error")
                 self.error.emit(str(e))
 
 
@@ -124,6 +153,7 @@ class MainWindow(QMainWindow):
         # 计算状态
         self._calc_results = []
         self._calc_worker = None
+        self._import_worker = None
         self._match_worker = None
 
         # 构建 UI
@@ -143,7 +173,16 @@ class MainWindow(QMainWindow):
                 self._calc_worker.terminate()
                 self._calc_worker.wait(1000)
 
-        # 2. Stop MatchWorker
+        # 2. Stop ImportWorker
+        if self._import_worker and self._import_worker.isRunning():
+            self._import_worker.requestInterruption()
+            self._import_worker.quit()
+            self._import_worker.wait(3000)
+            if self._import_worker.isRunning():
+                self._import_worker.terminate()
+                self._import_worker.wait(1000)
+
+        # 3. Stop MatchWorker
         if self._match_worker and self._match_worker.isRunning():
             self._match_worker.requestInterruption()
             self._match_worker.quit()
@@ -152,13 +191,13 @@ class MainWindow(QMainWindow):
                 self._match_worker.terminate()
                 self._match_worker.wait(1000)
 
-        # 3. Stop all interface module workers (feishu, commission, exchange_rate)
+        # 4. Stop all interface module workers (feishu, commission, exchange_rate)
         try:
             self.sync_widget.stop_all_workers()
         except Exception:
             pass
 
-        # 3. Shutdown debug log manager completely (closes window + removes handlers)
+        # 5. Shutdown debug log manager completely (closes window + removes handlers)
         try:
             from src.ui.debug_log_window import DebugLogManager
             mgr = DebugLogManager()
@@ -167,7 +206,7 @@ class MainWindow(QMainWindow):
         except Exception:
             pass
 
-        # 4. Close ALL top-level windows (not just visible ones)
+        # 6. Close ALL top-level windows (not just visible ones)
         app = QApplication.instance()
         if app:
             for widget in app.topLevelWidgets():
@@ -177,7 +216,7 @@ class MainWindow(QMainWindow):
                     except Exception:
                         pass
 
-        # 5. Force quit the application
+        # 7. Force quit the application
         if app:
             app.quit()
 
@@ -239,6 +278,7 @@ class MainWindow(QMainWindow):
         self.discount_calc = DiscountCalcWidget()
         self.discount_calc.set_service(self._discount_svc)
         self.discount_calc.calculate_requested.connect(self._on_calculate_requested)
+        self.discount_calc.import_requested.connect(self._on_import_requested)
         self.discount_calc.export_requested.connect(self._on_export)
         self.discount_calc.result_table.doubleClicked.connect(self._on_result_copy_cell)
         self.discount_calc.calc_table.view_clicked.connect(self._on_calc_view_clicked)
@@ -267,6 +307,7 @@ class MainWindow(QMainWindow):
         self.sidebar.refresh_theme(_init_theme)
         self.top_bar.refresh_theme(_init_theme)
         self.sync_widget.set_theme(_init_theme)
+        self._set_page_context(PAGE_SYNC)
 
         # ── 根据模块启用状态控制导航可见性 ──
         self._update_nav_visibility()
@@ -303,6 +344,7 @@ class MainWindow(QMainWindow):
 
     def _on_nav_changed(self, index: int):
         self.stack.setCurrentIndex(index)
+        self._set_page_context(index)
         try:
             if index == PAGE_PRODUCTS and not self.product_viewer._loaded:
                 self.product_viewer.load_data()
@@ -313,6 +355,13 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Failed to load page {index}: {e}")
             self.status_label.setText(f"加载页面失败: {e}")
+
+    def _set_page_context(self, index: int):
+        title, subtitle, badge, hint = PAGE_CONTEXT.get(
+            index,
+            ("店铺运营工作台", "围绕导入、匹配、测算、导出的一体化运营流程", "当前模块", "准备开始"),
+        )
+        self.top_bar.set_context(title, subtitle, badge, hint)
 
     # ── Sync finished ─────────────────────────
 
@@ -358,6 +407,8 @@ class MainWindow(QMainWindow):
 
     def _on_calculate_requested(self):
         """Dispatch to match or calculate based on current state."""
+        if self._import_worker and self._import_worker.isRunning():
+            return
         if self._calc_worker and self._calc_worker.isRunning():
             return
         if self._match_worker and self._match_worker.isRunning():
@@ -371,6 +422,24 @@ class MainWindow(QMainWindow):
             self._on_match()
         else:
             self._on_calculate()
+
+    def _on_import_requested(self, file_path: str):
+        """Import the selected Excel file in the background."""
+        if self._import_worker and self._import_worker.isRunning():
+            return
+        self.status_label.setText("正在导入 Excel...")
+        self._import_worker = _ImportWorker(self._discount_svc, file_path)
+        self._import_worker.finished.connect(self._on_import_finished)
+        self._import_worker.error.connect(self._on_import_error)
+        self._import_worker.start()
+
+    def _on_import_finished(self, file_path: str, count: int):
+        self.discount_calc.set_import_result(file_path, count)
+        self.status_label.setText(f"导入完成: {count} 行")
+
+    def _on_import_error(self, err: str):
+        self.discount_calc.set_import_error(err)
+        self.status_label.setText("导入失败")
 
     def _on_match(self):
         """Step 1: Match SKU + commission + calculate shipping.

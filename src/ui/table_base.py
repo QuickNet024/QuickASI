@@ -121,6 +121,19 @@ class ColumnFilterProxyModel(QSortFilterProxyModel):
         self._search_text: str = ""  # global text search across all columns
         self.setSortRole(Qt.ItemDataRole.DisplayRole)
 
+    def _refresh_filters(self):
+        """Refresh proxy filters with Qt6-compatible API when available."""
+        begin = getattr(self, "beginFilterChange", None)
+        end = getattr(self, "endFilterChange", None)
+        if callable(begin) and callable(end):
+            begin()
+            try:
+                end(QSortFilterProxyModel.Direction.Rows)
+            except Exception:
+                end()
+            return
+        self.invalidateFilter()
+
     def filterAcceptsRow(self, source_row, source_parent):  # noqa: N802
         source_model = self.sourceModel()
         # Global text search
@@ -147,7 +160,7 @@ class ColumnFilterProxyModel(QSortFilterProxyModel):
             try:
                 val = float(str(raw).replace(",", "").replace("%", "").strip())
             except (ValueError, TypeError):
-                return True  # pass if not a number
+                return False
             if op == "<" and not (val < threshold):
                 return False
             elif op == "<=" and not (val <= threshold):
@@ -162,31 +175,31 @@ class ColumnFilterProxyModel(QSortFilterProxyModel):
 
     def set_column_filter(self, col: int, values: set[str]):
         self._col_filters[col] = values
-        self.invalidateFilter()
+        self._refresh_filters()
 
     def clear_column_filter(self, col: int):
         self._col_filters.pop(col, None)
-        self.invalidateFilter()
+        self._refresh_filters()
 
     def set_numeric_filter(self, col: int, op: str, value: float):
         """Set numeric filter: op is '<', '<=', '>', '>=', '=='."""
         self._numeric_filters[col] = (op, value)
-        self.invalidateFilter()
+        self._refresh_filters()
 
     def clear_numeric_filter(self, col: int):
         self._numeric_filters.pop(col, None)
-        self.invalidateFilter()
+        self._refresh_filters()
 
     def set_search_text(self, text: str):
         """Set global search text (case-insensitive, matches any column)."""
         self._search_text = text.strip().lower()
-        self.invalidateFilter()
+        self._refresh_filters()
 
     def clear_all_filters(self):
         self._col_filters.clear()
         self._numeric_filters.clear()
         self._search_text = ""
-        self.invalidateFilter()
+        self._refresh_filters()
 
     def filter_column_unique_values(self, col: int) -> list[str]:
         source = self.sourceModel()
@@ -235,6 +248,8 @@ class BaseTableView(QTableView):
     - 添加到 _filter_skip_keys 需要跳过滤菜单的列 (如 _view)
     - 覆写颜色相关方法 (如 data() 中的 BackgroundRole/ForegroundRole 在 model 侧处理)
     """
+
+    AUTO_FIT_SAMPLE_LIMIT = 200
 
     def __init__(self, model: BaseTableModel, parent=None):
         super().__init__(parent)
@@ -372,6 +387,13 @@ class BaseTableView(QTableView):
         """Auto-fit all columns to content, then switch to Interactive for user resizing."""
         header = self.horizontalHeader()
         skip_keys = getattr(self, '_filter_skip_keys', set())
+        if self._model.rowCount() > self.AUTO_FIT_SAMPLE_LIMIT:
+            for col_idx, (key, _, defined_w) in enumerate(self._model.COLUMNS):
+                if key in skip_keys:
+                    continue
+                header.setSectionResizeMode(col_idx, QHeaderView.ResizeMode.Interactive)
+                header.resizeSection(col_idx, defined_w)
+            return
         # First pass: resize to content
         for col_idx, (key, _, _) in enumerate(self._model.COLUMNS):
             if key in skip_keys:

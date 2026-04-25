@@ -98,11 +98,11 @@ class SideBar(QWidget):
         title_lay.setContentsMargins(20, 18, 20, 10)
         title_lay.setSpacing(1)
 
-        self._title_label = QLabel("WB Calculator")
+        self._title_label = QLabel("店铺运营后台")
         self._title_label.setFont(QFont("Segoe UI", 13, QFont.Bold))
         title_lay.addWidget(self._title_label)
 
-        self._subtitle_label = QLabel("Wildberries 亏损计算")
+        self._subtitle_label = QLabel("Wildberries 盈亏测算与数据运营")
         self._subtitle_label.setFont(QFont("Microsoft YaHei", 8))
         title_lay.addWidget(self._subtitle_label)
         layout.addWidget(title_box)

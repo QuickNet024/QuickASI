@@ -302,3 +302,9 @@ class TestCalcFullResult:
         assert r.current_profit == pytest.approx(17.10, abs=0.5)
         assert isinstance(r.max_discount, int)
         assert r.min_price >= 5
+
+    def test_target_price_uses_target_margin_formula(self):
+        calc = _default_calc()
+        r = calc.calc_full_result(230, 132, 51, 14, 5)
+        expected = r.total_fixed / (1 - r.r_total - 0.10)
+        assert r.target_price == pytest.approx(expected, abs=0.01)

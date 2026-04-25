@@ -63,6 +63,24 @@ class DiscountCalcService:
         logger.info(f"Imported {count} rows from {file_path}, batch={batch}")
         return count
 
+    @staticmethod
+    def _parse_price(raw_value) -> float:
+        """Parse a price-like cell value into float."""
+        return float(str(raw_value).replace(",", "").strip())
+
+    @staticmethod
+    def _parse_discount(raw_value) -> float:
+        """Parse current discount from import rows.
+
+        import_rows layout:
+          12=current_discount, 13=new_discount
+        The live profit calculation must always use the current discount,
+        while new_discount is reserved for export suggestions.
+        """
+        if raw_value in (None, ""):
+            return 0.0
+        return float(str(raw_value).replace(",", "").strip())
+
     def calculate(self, params_dict: dict,
                   commission_table: str = "commission_wb_cross_border",
                   strategy: str = "discount_only",
@@ -104,7 +122,7 @@ class DiscountCalcService:
 
             # ── Step 1: Parse price ──
             try:
-                current_price = float(str(raw[10]).replace(",", "").strip())  # current_price column
+                current_price = self._parse_price(raw[10])  # current_price column
             except (ValueError, TypeError):
                 result.commission_source = "价格无效"
                 results.append(result)
@@ -152,7 +170,7 @@ class DiscountCalcService:
                 result.commission_rate = comm_rate
 
             # ── Step 4: Calculate ──
-            discount = raw[13] if raw[13] is not None else 0  # current_discount column
+            discount = self._parse_discount(raw[12])  # current_discount column
             result.discounted_price = current_price * (1 - discount / 100) if discount else current_price
 
             params = CalculationParams(**params_dict)
@@ -228,10 +246,28 @@ class DiscountCalcService:
         # 缓存佣金表列表
         _cached_commission_tables = comm_svc.db.get_commission_tables()
         _cached_table_names = [t.table_name for t in _cached_commission_tables]
+        _commission_lookup = {}
 
         # 缓存运费配置和币种
         _cached_shipping_config = self._shipping_svc.get_config(shop_type) if self._shipping_svc else None
         _cached_shipping_currency = self._shipping_svc.get_currency(shop_type) if self._shipping_svc else "CNY"
+
+        parts = commission_table.replace("commission_", "").split("_", 1)
+        platform = parts[0] if parts else "wb"
+        shop_t = parts[1] if len(parts) > 1 else "local"
+        _tbl_name = f"commission_{platform}_{shop_t}"
+        if _tbl_name in _cached_table_names:
+            for row in comm_svc.db.get_commission_table_data(_tbl_name):
+                product_name = str(row[2] or "").strip()
+                category_name = str(row[1] or "").strip()
+                try:
+                    rate_value = float(row[3]) if row[3] is not None else Config.DEFAULT_COMMISSION_RATE
+                except (ValueError, TypeError):
+                    rate_value = Config.DEFAULT_COMMISSION_RATE
+                if product_name and product_name not in _commission_lookup:
+                    _commission_lookup[product_name] = ("product", rate_value)
+                if category_name and category_name not in _commission_lookup:
+                    _commission_lookup[category_name] = ("category", rate_value)
 
         results = []
         for idx, raw in enumerate(raw_rows):
@@ -247,7 +283,7 @@ class DiscountCalcService:
 
             # Parse price
             try:
-                current_price = float(str(raw[10]).replace(",", "").strip())
+                current_price = self._parse_price(raw[10])
             except (ValueError, TypeError):
                 result.commission_source = "价格无效"
                 results.append(result)
@@ -276,16 +312,12 @@ class DiscountCalcService:
                 continue
 
             # Match category → Commission rate（使用缓存的佣金表列表）
-            parts = commission_table.replace("commission_", "").split("_", 1)
-            platform = parts[0] if parts else "wb"
-            shop_t = parts[1] if len(parts) > 1 else "local"
-
             category = result.product_category or str(raw[2] or "")
-            _tbl_name = f"commission_{platform}_{shop_t}"
             if _tbl_name in _cached_table_names:
-                comm_rate = comm_svc.db.find_rate_in_table(_tbl_name, category, "rate_col_0")
-                if comm_rate is not None:
-                    matched, source = True, "product"
+                cached_comm = _commission_lookup.get(category)
+                if cached_comm is not None:
+                    source, comm_rate = cached_comm
+                    matched = True
                 else:
                     comm_rate = Config.DEFAULT_COMMISSION_RATE
                     matched, source = False, "default"
@@ -339,7 +371,7 @@ class DiscountCalcService:
                 result.shipping_fee = round(self._shipping_svc.calc_fee(l, w, h, shop_type), 2)
 
             # Compute discounted_price from current price + discount
-            discount = raw[13] if raw[13] is not None else 0
+            discount = self._parse_discount(raw[12])
             result.discounted_price = current_price * (1 - discount / 100) if discount else current_price
 
             # breakeven, profit, max_discount, min_price, target_discount, target_price remain None
@@ -400,11 +432,11 @@ class DiscountCalcService:
             imp = import_by_id.get(r[1])
             if imp:
                 try:
-                    original_price = float(str(imp[10]).replace(",", "").strip())
+                    original_price = self._parse_price(imp[10])
                 except (ValueError, TypeError):
                     original_price = float(r[16]) if r[16] else 0.0
                 try:
-                    discount = float(imp[12]) if imp[12] is not None else 0.0
+                    discount = self._parse_discount(imp[12])
                 except (ValueError, TypeError):
                     discount = 0.0
                 selling_price = original_price * (1 - discount / 100) if discount else original_price
@@ -432,7 +464,7 @@ class DiscountCalcService:
             breakeven = calc.calc_breakeven(product_cost, shipping_fee)
             profit = calc.calc_profit(selling_price, product_cost, shipping_fee)
             min_price = calc.calc_min_price_no_loss(breakeven)
-            target_price = calc.calc_target_price(breakeven, params.target_profit_rate)
+            target_price = calc.calc_target_price(total_fixed, r_total, params.target_profit_rate)
 
             # Discounts are calculated against original price (优惠折扣)
             # max_discount: how much % off from original to reach breakeven

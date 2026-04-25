@@ -410,6 +410,19 @@ class TestColumnFilterProxyModel:
         assert "✅" in vals
         assert "❌" in vals
 
+    def test_numeric_filter_excludes_non_numeric_rows(self):
+        model = ResultModel()
+        model.set_data([
+            {"seller_sku": "SKU1", "profit": 10},
+            {"seller_sku": "SKU2", "profit": -5},
+            {"seller_sku": "SKU3", "profit": None},
+        ])
+        proxy = ColumnFilterProxyModel()
+        proxy.setSourceModel(model)
+        col = _col_index(model, "profit")
+        proxy.set_numeric_filter(col, "<", 0)
+        assert proxy.rowCount() == 1
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  6. RawDataModel tests

@@ -95,8 +95,20 @@ QPushButton[class="btn-success"]:pressed {
     background: #065F46;
 }
 QPushButton[class="btn-success"]:disabled {
-    background: #1A3D2E;
-    color: #5A9E6E;
+    background: #2A2F36;
+    color: #64748B;
+}
+
+QPushButton[class="btn-outline"] {
+    background: #252525;
+    border: 1px solid #475569;
+    color: #C7D2FE;
+    font-weight: 500;
+    border-radius: 8px;
+}
+QPushButton[class="btn-outline"]:hover {
+    background: #2E3440;
+    border-color: #818CF8;
 }
 
 /* Icon Button */
@@ -507,8 +519,34 @@ QWidget#sidebar {
 QWidget#topbar {
     background: #252525;
     border-bottom: 1px solid #333;
-    min-height: 48px;
-    max-height: 56px;
+    min-height: 72px;
+    max-height: 72px;
+}
+
+QLabel#pageTitle {
+    font-size: 20px;
+    font-weight: 700;
+    color: #F9FAFB;
+}
+
+QLabel#pageSubtitle {
+    font-size: 12px;
+    color: #9CA3AF;
+}
+
+QLabel#contextBadge {
+    background: #1E1B4B;
+    color: #C7D2FE;
+    border: 1px solid #3730A3;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+QLabel#contextHint {
+    font-size: 11px;
+    color: #9CA3AF;
 }
 
 QLabel#exchangeRate {
@@ -835,4 +873,68 @@ QFrame#colSep {
     background: #374151;
     max-height: 1px;
     border: none;
+}
+
+/* ── Discount Dashboard ── */
+QFrame#summaryCard {
+    background: #252525;
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+}
+
+QLabel#summaryCardTitle {
+    font-size: 11px;
+    color: #9CA3AF;
+}
+
+QLabel#summaryCardValue {
+    font-size: 18px;
+    font-weight: 700;
+    color: #F9FAFB;
+}
+
+QLabel#summaryCardHint {
+    font-size: 11px;
+    color: #9CA3AF;
+}
+
+QGroupBox#workflowCard {
+    border: 1px solid #3A3A3A;
+    border-radius: 8px;
+    background: #252525;
+}
+
+QLabel#workflowTitle {
+    font-size: 15px;
+    font-weight: 700;
+    color: #F9FAFB;
+}
+
+QLabel#workflowHint {
+    font-size: 12px;
+    color: #9CA3AF;
+}
+
+QLabel#workflowBadges {
+    font-size: 11px;
+    color: #9CA3AF;
+    padding: 2px 0 6px 0;
+}
+
+QLabel#fileSummary {
+    font-size: 12px;
+    color: #CBD5E1;
+}
+
+QFrame#calcControlGrid,
+QFrame#filterBar {
+    background: #202020;
+    border: 1px solid #334155;
+    border-radius: 8px;
+}
+
+QLabel#fieldLabel {
+    font-size: 11px;
+    color: #94A3B8;
+    font-weight: 600;
 }

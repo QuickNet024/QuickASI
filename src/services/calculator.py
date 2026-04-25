@@ -10,7 +10,7 @@ Formulas:
   Total_Fixed: Cbase + Crisk + adFixed - ship*withdrawRate
   BreakEven: Total_Fixed / (1 - R_Total)
   Profit:   price - price*R_Total - Total_Fixed
-  TargetPrice: BreakEven × (1 + target_profit_rate/100)
+  TargetPrice: Total_Fixed / (1 - R_Total - target_profit_rate/100)
   TargetDiscount: floor((1 - target_price/current_price) × 100), [0,95]
 """
 
@@ -151,10 +151,15 @@ class LossCalculator:
     def calc_min_price_no_loss(self, breakeven: float) -> float:
         return max(breakeven, Config.PRICE_MIN)
 
-    # ── Target price with profit rate ──
-    # target_price = breakeven × (1 + target_profit_rate/100)
-    def calc_target_price(self, breakeven: float, target_profit_rate: float) -> float:
-        return breakeven * (1 + target_profit_rate / 100)
+    # ── Target price with profit margin ──
+    # target_profit_rate is interpreted as target profit margin on selling price,
+    # matching the original HTML calculator:
+    #   price - price*R_Total - Total_Fixed = price*target_margin
+    #   => price = Total_Fixed / (1 - R_Total - target_margin)
+    def calc_target_price(self, total_fixed: float, r_total: float, target_profit_rate: float) -> float:
+        target_margin = target_profit_rate / 100
+        denominator = 1 - r_total - target_margin
+        return total_fixed / denominator if denominator > 0 else float('inf')
 
     # ── Target discount ──
     # floor((1 - target_price/current_price) × 100), clamped [-∞, 95]
@@ -169,17 +174,22 @@ class LossCalculator:
     def calc_full_result(self, current_price: float, product_cost: float,
                          l: float, w: float, h: float) -> CalculationResult:
         sf = self.calc_shipping_fee(l, w, h)
-        be = self.calc_breakeven(product_cost, sf)
-        target_price = self.calc_target_price(be, self.params.target_profit_rate)
+        cbase = self.calc_cbase(product_cost, sf)
+        crisk = self.calc_crisk(product_cost, sf)
+        r_total = self.calc_r_total()
+        total_fixed = cbase + crisk + self.params.ad_fixed - sf * self.params.withdraw_fee / 100
+        denominator = 1 - r_total
+        be = total_fixed / denominator if denominator > 0 else float('inf')
+        target_price = self.calc_target_price(total_fixed, r_total, self.params.target_profit_rate)
         target_discount = self.calc_target_discount(current_price, target_price)
         return CalculationResult(
             shipping_fee=sf,
-            cbase=self.calc_cbase(product_cost, sf),
-            crisk=self.calc_crisk(product_cost, sf),
-            r_total=self.calc_r_total(),
-            total_fixed=self.calc_total_fixed(product_cost, sf),
+            cbase=cbase,
+            crisk=crisk,
+            r_total=r_total,
+            total_fixed=total_fixed,
             breakeven=be,
-            current_profit=self.calc_profit(current_price, product_cost, sf),
+            current_profit=current_price - current_price * r_total - total_fixed,
             max_discount=self.calc_max_discount_no_loss(current_price, be),
             min_price=self.calc_min_price_no_loss(be),
             target_discount=target_discount,

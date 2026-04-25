@@ -36,30 +36,30 @@ class ExcelService:
 
     def read_template(self, file_path: str) -> List[ProductRow]:
         """Read all product rows from the uploaded Excel template."""
-        wb = openpyxl.load_workbook(file_path)
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
         ws = wb.active
 
         rows = []
-        for row_idx in range(2, ws.max_row + 1):
-            seller_sku = ws.cell(row=row_idx, column=self.COL_SELLER_SKU).value
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+            seller_sku = row[self.COL_SELLER_SKU - 1] if len(row) >= self.COL_SELLER_SKU else None
             if not seller_sku:
                 continue
 
-            current_price_raw = ws.cell(row=row_idx, column=self.COL_CURRENT_PRICE).value
-            new_price_raw = ws.cell(row=row_idx, column=self.COL_NEW_PRICE).value
-            current_discount_raw = ws.cell(row=row_idx, column=self.COL_CURRENT_DISCOUNT).value
-            new_discount_raw = ws.cell(row=row_idx, column=self.COL_NEW_DISCOUNT).value
+            current_price_raw = row[self.COL_CURRENT_PRICE - 1] if len(row) >= self.COL_CURRENT_PRICE else None
+            new_price_raw = row[self.COL_NEW_PRICE - 1] if len(row) >= self.COL_NEW_PRICE else None
+            current_discount_raw = row[self.COL_CURRENT_DISCOUNT - 1] if len(row) >= self.COL_CURRENT_DISCOUNT else None
+            new_discount_raw = row[self.COL_NEW_DISCOUNT - 1] if len(row) >= self.COL_NEW_DISCOUNT else None
 
             rows.append(ProductRow(
                 row_number=row_idx,
-                brand=str(ws.cell(row=row_idx, column=1).value or ""),
-                category=str(ws.cell(row=row_idx, column=2).value or ""),
-                wb_article=str(ws.cell(row=row_idx, column=3).value or ""),
+                brand=str(row[0] or "") if len(row) > 0 else "",
+                category=str(row[1] or "") if len(row) > 1 else "",
+                wb_article=str(row[2] or "") if len(row) > 2 else "",
                 seller_sku=str(seller_sku),
-                barcode=str(ws.cell(row=row_idx, column=5).value or ""),
-                wb_stock=ws.cell(row=row_idx, column=6).value,
-                seller_stock=ws.cell(row=row_idx, column=7).value,
-                turnover=str(ws.cell(row=row_idx, column=8).value or ""),
+                barcode=str(row[4] or "") if len(row) > 4 else "",
+                wb_stock=row[5] if len(row) > 5 else None,
+                seller_stock=row[6] if len(row) > 6 else None,
+                turnover=str(row[7] or "") if len(row) > 7 else "",
                 current_price=str(current_price_raw or ""),
                 new_price=self._safe_float(new_price_raw),
                 current_discount=self._safe_int(current_discount_raw),
