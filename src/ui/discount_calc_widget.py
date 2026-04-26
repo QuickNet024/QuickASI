@@ -258,6 +258,22 @@ class DiscountCalcWidget(QWidget):
         self.btn_clear_filter.setMinimumWidth(72)
         filter_row.addWidget(self.btn_clear_filter)
 
+        filter_row.addSpacing(12)
+
+        self.btn_export_unmatched_sku = QPushButton("导出未匹配SKU")
+        self.btn_export_unmatched_sku.setProperty("class", "btn-outline")
+        self.btn_export_unmatched_sku.setMinimumWidth(110)
+        self.btn_export_unmatched_sku.setToolTip("导出SKU未匹配到的商品到Excel")
+        self.btn_export_unmatched_sku.clicked.connect(self._on_export_unmatched_sku)
+        filter_row.addWidget(self.btn_export_unmatched_sku)
+
+        self.btn_export_unmatched_category = QPushButton("导出未匹配类目")
+        self.btn_export_unmatched_category.setProperty("class", "btn-outline")
+        self.btn_export_unmatched_category.setMinimumWidth(110)
+        self.btn_export_unmatched_category.setToolTip("导出类目未匹配到的商品到Excel")
+        self.btn_export_unmatched_category.clicked.connect(self._on_export_unmatched_category)
+        filter_row.addWidget(self.btn_export_unmatched_category)
+
         self.lbl_filter_count = QLabel("")
         self.lbl_filter_count.setProperty("class", "stat-label")
         filter_row.addWidget(self.lbl_filter_count)
@@ -684,6 +700,92 @@ class DiscountCalcWidget(QWidget):
         for tbl in self._all_tables():
             tbl._proxy.set_search_text(text)
         self._update_filter_count()
+
+    def _on_export_unmatched_sku(self):
+        """导出SKU未匹配到的商品到Excel"""
+        self._export_unmatched("sku")
+
+    def _on_export_unmatched_category(self):
+        """导出类目未匹配到的商品到Excel"""
+        self._export_unmatched("category")
+
+    def _export_unmatched(self, match_type: str):
+        """Export unmatched items to Excel.
+
+        match_type: "sku" or "category"
+        """
+        if not self._file_path:
+            QMessageBox.information(self, "提示", "请先导入Excel文件")
+            return
+
+        combined = self._svc.get_import_data()
+        if not combined:
+            QMessageBox.information(self, "提示", "没有可导出的数据")
+            return
+
+        unmatched = []
+        for imp, calc in combined:
+            if calc is None:
+                unmatched.append(imp)
+            else:
+                sku_ok = bool(calc[2])
+                cat_ok = bool(calc[3])
+                if match_type == "sku" and not sku_ok:
+                    unmatched.append(imp)
+                elif match_type == "category" and not cat_ok:
+                    unmatched.append(imp)
+
+        if not unmatched:
+            label = "未匹配SKU" if match_type == "sku" else "未匹配类目"
+            QMessageBox.information(
+                self, "提示", f"所有商品的{label}都已匹配，无需导出"
+            )
+            return
+
+        label = "未匹配SKU" if match_type == "sku" else "未匹配类目"
+        default_name = (
+            os.path.splitext(os.path.basename(self._file_path))[0]
+            + f"_{label}.xlsx"
+        )
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, f"导出{label}", default_name, "Excel文件 (*.xlsx)"
+        )
+        if not save_path:
+            return
+
+        try:
+            from openpyxl import Workbook
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = label
+
+            headers = [
+                "行号", "品牌", "类目", "WB货号", "卖家货号", "条码",
+                "WB库存", "卖家库存", "周转率", "原价", "新价", "当前折扣", "新折扣",
+            ]
+            ws.append(headers)
+
+            for imp in unmatched:
+                ws.append([
+                    imp[1] or "", imp[2] or "", imp[3] or "",
+                    imp[4] or "", imp[5] or "", imp[6] or "",
+                    imp[7] or "", imp[8] or "", imp[9] or "",
+                    imp[10] or "", imp[11] or "", imp[12] or "",
+                    imp[13] or "",
+                ])
+
+            for col in ws.columns:
+                max_len = max(len(str(cell.value or "")) for cell in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 30)
+
+            wb.save(save_path)
+            QMessageBox.information(
+                self, "导出成功",
+                f"{label}共 {len(unmatched)} 条\n已保存到:\n{save_path}",
+            )
+        except Exception as e:
+            QMessageBox.warning(self, "导出失败", f"导出出错:\n{e}")
 
     def _apply_filters(self):
         """Apply all active filters to all 4 tables."""

@@ -7,7 +7,19 @@ import logging
 from src.config import Config
 from src.models.database import DatabaseManager
 
+try:
+    import qt_material
+    _HAS_QT_MATERIAL = True
+except ImportError:
+    _HAS_QT_MATERIAL = False
+
 logger = logging.getLogger(__name__)
+
+# qt-material theme name mapping
+_THEME_MAP = {
+    "light": "light_teal.xml",
+    "dark": "dark_teal.xml",
+}
 
 
 class ThemeManager:
@@ -41,11 +53,49 @@ class ThemeManager:
         return self._current_theme
 
     def apply_theme(self, app, theme_name: str = None):
-        """应用指定主题，加载QSS文件"""
+        """应用指定主题"""
         self._ensure_loaded()
         if theme_name is None:
             theme_name = self._current_theme
 
+        if _HAS_QT_MATERIAL:
+            self._apply_qt_material(app, theme_name)
+        else:
+            self._apply_qss_fallback(app, theme_name)
+
+    def _apply_qt_material(self, app, theme_name: str):
+        """使用 qt-material 应用主题"""
+        material_theme = _THEME_MAP.get(theme_name)
+        if material_theme is None:
+            logger.error(f"Unknown theme: {theme_name}")
+            return
+
+        # Try assets/custom.qss first (T4 will create it), fall back to project root
+        css_file_path = os.path.join(
+            os.path.dirname(__file__), "assets", "custom.qss"
+        )
+        if not os.path.isfile(css_file_path):
+            css_file_path = os.path.join(
+                os.path.dirname(__file__), "..", "..", "custom_override.qss"
+            )
+            if not os.path.isfile(css_file_path):
+                css_file_path = None
+
+        try:
+            qt_material.apply_stylesheet(
+                app,
+                theme=material_theme,
+                css_file=css_file_path,
+                invert_secondary=False,
+            )
+            self._current_theme = theme_name
+            self._save_preference()
+            logger.info(f"Theme applied (qt-material): {theme_name}")
+        except Exception as e:
+            logger.error(f"Failed to apply theme {theme_name}: {e}")
+
+    def _apply_qss_fallback(self, app, theme_name: str):
+        """qt-material 不可用时回退到直接加载 QSS"""
         qss_path = os.path.join(
             os.path.dirname(__file__), "assets", f"{theme_name}.qss"
         )
@@ -56,7 +106,7 @@ class ThemeManager:
             app.setStyleSheet(qss_content)
             self._current_theme = theme_name
             self._save_preference()
-            logger.info(f"Theme applied: {theme_name}")
+            logger.info(f"Theme applied (QSS fallback): {theme_name}")
         except FileNotFoundError:
             logger.error(f"Theme file not found: {qss_path}")
         except Exception as e:

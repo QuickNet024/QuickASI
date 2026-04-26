@@ -2,11 +2,9 @@
 """匹配数据表格组件 — 显示中间匹配结果（SKU匹配、佣金匹配、库存状态等）"""
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
 
 from src.ui.table_base import (
-    BaseTableModel, BaseTableView,
-    STOCK_STATUS_COLORS, COLOR_ROW_NO_SKU, COLOR_ROW_NO_CATEGORY,
+    BaseTableModel, BaseTableView, ThemeColors,
 )
 
 # 列定义: (key, title, width)
@@ -116,23 +114,34 @@ class MatchDataModel(BaseTableModel):
 
         if role == Qt.ItemDataRole.BackgroundRole:
             # Inventory status cell color takes priority
-            if key == "inventory_status" and val and str(val) in STOCK_STATUS_COLORS:
-                bg, _ = STOCK_STATUS_COLORS[str(val)]
+            if key == "inventory_status" and val and str(val) in ThemeColors.stock_status_colors():
+                bg, _ = ThemeColors.stock_status_colors()[str(val)]
                 return bg
             # Row-level color based on match status
             if self._col_value(self._data[row], col) is not None or key in ("sku_matched",):
                 sku_ok = self._data[row].get("sku_matched", True)
                 cat_ok = self._data[row].get("category_matched", True)
                 if sku_ok is False:
-                    return COLOR_ROW_NO_SKU
+                    return ThemeColors.row_no_sku()
                 if cat_ok is False:
-                    return COLOR_ROW_NO_CATEGORY
+                    return ThemeColors.row_no_category()
             return None
 
         if role == Qt.ItemDataRole.ForegroundRole:
-            if key == "inventory_status" and val and str(val) in STOCK_STATUS_COLORS:
-                _, fg = STOCK_STATUS_COLORS[str(val)]
+            if key == "inventory_status" and val and str(val) in ThemeColors.stock_status_colors():
+                _, fg = ThemeColors.stock_status_colors()[str(val)]
                 return fg
+            # 有背景色的行 → 用高对比度前景色
+            bg = None
+            if self._col_value(self._data[row], col) is not None or key in ("sku_matched",):
+                sku_ok = self._data[row].get("sku_matched", True)
+                cat_ok = self._data[row].get("category_matched", True)
+                if sku_ok is False:
+                    bg = ThemeColors.row_no_sku()
+                elif cat_ok is False:
+                    bg = ThemeColors.row_no_category()
+            if bg is not None:
+                return ThemeColors.row_fg()
             return None
 
         return super().data(index, role)

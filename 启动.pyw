@@ -6,7 +6,13 @@ import sys
 import os
 import threading
 
-_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+# Support both development and PyInstaller frozen modes
+if getattr(sys, 'frozen', False):
+    # Running as PyInstaller bundle — use exe directory as project root
+    _PROJECT_ROOT = os.path.dirname(sys.executable)
+else:
+    _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+
 sys.path.insert(0, _PROJECT_ROOT)
 os.chdir(_PROJECT_ROOT)
 

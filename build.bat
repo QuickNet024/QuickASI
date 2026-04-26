@@ -19,7 +19,8 @@ pyinstaller ^
     --hidden-import=src.models ^
     --hidden-import=src.services ^
     --hidden-import=src.ui ^
-    --collect-all PyQt5 ^
+    --collect-all PySide6 ^
+    --collect-all qt_material ^
     src\main.py
 
 echo.

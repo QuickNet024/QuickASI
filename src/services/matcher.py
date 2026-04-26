@@ -47,11 +47,10 @@ class ProductMatcher:
         seller_sku = seller_sku.strip()
         parts = [p.strip() for p in seller_sku.split("-")]
         sheet_prefix = parts[0]
-        # Remove last -F{N} segment
-        if len(parts) > 1 and re.match(r'^F\d+$', parts[-1]):
-            sku_code = "-".join(parts[:-1])
-        else:
-            sku_code = "-".join(parts)
+        # Remove last -F{N} or -修改{N} suffix
+        while len(parts) > 1 and (re.match(r'^F\d+$', parts[-1]) or re.match(r'^修改\d+$', parts[-1])):
+            parts = parts[:-1]
+        sku_code = "-".join(parts)
         # Remove ALL spaces for matching
         sku_code = sku_code.replace(" ", "")
         return sheet_prefix, sku_code
@@ -72,6 +71,15 @@ class ProductMatcher:
             for p in candidates:
                 if p.sku_code == sku_code:
                     return p
+            # Fuzzy: check if core product name (without prefix) is a substring
+            # More specific than generic substring, so try first
+            prefix_sep = sheet_prefix + "-"
+            if sku_code.startswith(prefix_sep):
+                seller_core = sku_code[len(prefix_sep):]
+                if seller_core:
+                    for p in candidates:
+                        if seller_core in p.sku_code:
+                            return p
             for p in candidates:
                 if sku_code in p.sku_code or p.sku_code in sku_code:
                     return p
@@ -82,6 +90,15 @@ class ProductMatcher:
         for p in candidates:
             if p.sku_code.replace(" ", "") == sku_code:
                 return p
+        # Fuzzy: core-name containment (more specific, try first)
+        prefix_sep = sheet_prefix + "-"
+        if sku_code.startswith(prefix_sep):
+            seller_core = sku_code[len(prefix_sep):]
+            if seller_core:
+                for p in candidates:
+                    p_norm = p.sku_code.replace(" ", "")
+                    if seller_core in p_norm:
+                        return p
         for p in candidates:
             p_norm = p.sku_code.replace(" ", "")
             if sku_code in p_norm or p_norm in sku_code:

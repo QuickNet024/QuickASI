@@ -1,6 +1,31 @@
 # WB亏损计算系统 — 版本说明
 
-## 应用版本: v2.3.1
+## 应用版本: v2.4.0
+
+---
+
+## v2.4.0 (2026-04-26)
+
+### 新增功能
+- **qt-material商业级主题系统** — 20+主题可运行时切换
+- **5-Tab现代布局** — 数据同步/价格计算/结果分析/导出结果/设置
+- **策略预设保存/加载/删除功能**
+- **ThemeColors主题感知表格颜色系统**
+
+### 修复问题
+- **QComboBox下拉箭头不显示问题**
+- **控件高度不一致、文字大小混乱**
+- **requirements.txt和build.bat PyQt5→PySide6**
+- **暗色主题下表格颜色对比度不足**
+
+### 重构
+- **DiscountCalcWidget拆分为4个独立Tab组件**
+- **ThemeManager从QSS文件加载改为qt-material集成**
+- **table_base.py颜色系统从硬编码改为ThemeColors**
+
+### 删除
+- **sidebar.py侧边栏导航** — 改为QTabWidget
+- **light.qss/dark.qss手写主题文件** — 改为qt-material
 
 ---
 

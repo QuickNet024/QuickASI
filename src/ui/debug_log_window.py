@@ -178,6 +178,7 @@ class DebugLogWindow(QWidget):
         # ── 日志文本区 ──
         self._text_edit = QTextEdit()
         self._text_edit.setReadOnly(True)
+        self._text_edit.setObjectName("debugLogTextEdit")
         self._text_edit.setFont(QFont("Consolas", 10))
         self._text_edit.setMinimumHeight(300)
         layout.addWidget(self._text_edit, stretch=1)
@@ -231,14 +232,10 @@ class DebugLogWindow(QWidget):
     def set_theme(self, is_dark: bool):
         """设置主题色"""
         self._is_dark = is_dark
-        if is_dark:
-            self._text_edit.setStyleSheet(
-                "QTextEdit { background: #1E1E1E; color: #D4D4D4; border: 1px solid #333; }"
-            )
-        else:
-            self._text_edit.setStyleSheet(
-                "QTextEdit { background: #FFFFFF; color: #202124; border: 1px solid #DADCE0; }"
-            )
+        cls = "debug-log-dark" if is_dark else "debug-log-light"
+        self._text_edit.setProperty("class", cls)
+        self._text_edit.style().unpolish(self._text_edit)
+        self._text_edit.style().polish(self._text_edit)
 
     # ── 工具栏事件 ──
 

@@ -222,22 +222,118 @@ class ColumnFilterProxyModel(QSortFilterProxyModel):
 
 
 # ---------------------------------------------------------------------------
-# BaseTableView
+# ThemeColors — 主题感知颜色提供器
 # ---------------------------------------------------------------------------
 
-# 颜色常量
-STOCK_STATUS_COLORS = {
-    "货源充足": (QColor("#e6f7e6"), QColor("#1a7a1a")),
-    "停止上架": (QColor("#ffe6e6"), QColor("#c91a2a")),
-    "货源紧缺": (QColor("#fff3cd"), QColor("#856404")),
-    "等待补货": (QColor("#ffe8cc"), QColor("#b35900")),
-}
-COLOR_PROFIT_FG = QColor(56, 158, 13)
-COLOR_LOSS_FG = QColor(207, 19, 34)
-COLOR_ROW_NO_SKU = QColor("#ffe6e6")
-COLOR_ROW_NO_CATEGORY = QColor("#fff3e0")
-COLOR_ROW_PROFIT = QColor("#e6f7e6")
-COLOR_ROW_LOSS = QColor("#ffe6e6")
+class ThemeColors:
+    """根据当前主题（light / dark）返回对应的表格颜色。
+
+    用法::
+
+        ThemeColors.set_theme("dark")
+        fg = ThemeColors.profit_fg()       # 亮绿色（适合深色背景）
+        bg = ThemeColors.row_profit()      # 深绿色背景
+        status_colors = ThemeColors.stock_status_colors()
+
+    Light 主题颜色与原硬编码值完全一致，保证向后兼容。
+    Dark  主题颜色在深色背景上提供更高对比度。
+    """
+
+    _theme: str = "light"
+
+    # -- Light 调色板（原始硬编码值）-----------------------------------------
+    _LIGHT_STOCK_STATUS: dict[str, tuple[QColor, QColor]] = {
+        "货源充足": (QColor("#e6f7e6"), QColor("#1a7a1a")),
+        "停止上架": (QColor("#ffe6e6"), QColor("#c91a2a")),
+        "货源紧缺": (QColor("#fff3cd"), QColor("#856404")),
+        "等待补货": (QColor("#ffe8cc"), QColor("#b35900")),
+    }
+    _LIGHT_PROFIT_FG: QColor = QColor(56, 158, 13)
+    _LIGHT_LOSS_FG: QColor = QColor(207, 19, 34)
+    _LIGHT_ROW_NO_SKU: QColor = QColor("#ffe6e6")
+    _LIGHT_ROW_NO_CATEGORY: QColor = QColor("#fff3e0")
+    _LIGHT_ROW_PROFIT: QColor = QColor("#e6f7e6")
+    _LIGHT_ROW_LOSS: QColor = QColor("#ffe6e6")
+    _LIGHT_ROW_FG: QColor = QColor("#333333")
+
+    # -- Dark 调色板（高对比度，适合深色背景）---------------------------------
+    _DARK_STOCK_STATUS: dict[str, tuple[QColor, QColor]] = {
+        "货源充足": (QColor("#1a3d1a"), QColor("#66cc66")),
+        "停止上架": (QColor("#3d1a1a"), QColor("#ff6666")),
+        "货源紧缺": (QColor("#3d3d1a"), QColor("#ffcc66")),
+        "等待补货": (QColor("#3d2a1a"), QColor("#ff9933")),
+    }
+    _DARK_PROFIT_FG: QColor = QColor(102, 204, 102)
+    _DARK_LOSS_FG: QColor = QColor(255, 102, 102)
+    _DARK_ROW_NO_SKU: QColor = QColor("#3d1a1a")
+    _DARK_ROW_NO_CATEGORY: QColor = QColor("#3d2a1a")
+    _DARK_ROW_PROFIT: QColor = QColor("#1a3d1a")
+    _DARK_ROW_LOSS: QColor = QColor("#3d1a1a")
+    _DARK_ROW_FG: QColor = QColor("#e0e0e0")
+
+    # -- 公共 API ------------------------------------------------------------
+
+    @classmethod
+    def set_theme(cls, theme_name: str):
+        """切换主题，接受 ``"light"`` 或 ``"dark"``。"""
+        if theme_name not in ("light", "dark"):
+            raise ValueError(f"Unknown theme: {theme_name!r}, expected 'light' or 'dark'")
+        cls._theme = theme_name
+
+    @classmethod
+    def get_theme(cls) -> str:
+        return cls._theme
+
+    @classmethod
+    def stock_status_colors(cls) -> dict[str, tuple[QColor, QColor]]:
+        return cls._DARK_STOCK_STATUS if cls._theme == "dark" else cls._LIGHT_STOCK_STATUS
+
+    @classmethod
+    def profit_fg(cls) -> QColor:
+        return cls._DARK_PROFIT_FG if cls._theme == "dark" else cls._LIGHT_PROFIT_FG
+
+    @classmethod
+    def loss_fg(cls) -> QColor:
+        return cls._DARK_LOSS_FG if cls._theme == "dark" else cls._LIGHT_LOSS_FG
+
+    @classmethod
+    def row_no_sku(cls) -> QColor:
+        return cls._DARK_ROW_NO_SKU if cls._theme == "dark" else cls._LIGHT_ROW_NO_SKU
+
+    @classmethod
+    def row_no_category(cls) -> QColor:
+        return cls._DARK_ROW_NO_CATEGORY if cls._theme == "dark" else cls._LIGHT_ROW_NO_CATEGORY
+
+    @classmethod
+    def row_profit(cls) -> QColor:
+        return cls._DARK_ROW_PROFIT if cls._theme == "dark" else cls._LIGHT_ROW_PROFIT
+
+    @classmethod
+    def row_loss(cls) -> QColor:
+        return cls._DARK_ROW_LOSS if cls._theme == "dark" else cls._LIGHT_ROW_LOSS
+
+    @classmethod
+    def row_fg(cls) -> QColor:
+        """行级默认前景色（确保在彩色行背景上可读）。"""
+        return cls._DARK_ROW_FG if cls._theme == "dark" else cls._LIGHT_ROW_FG
+
+
+# ---------------------------------------------------------------------------
+# 模块级常量 — 保持向后兼容，委托给 ThemeColors（默认 light 主题）
+# ---------------------------------------------------------------------------
+
+STOCK_STATUS_COLORS = ThemeColors._LIGHT_STOCK_STATUS
+COLOR_PROFIT_FG = ThemeColors._LIGHT_PROFIT_FG
+COLOR_LOSS_FG = ThemeColors._LIGHT_LOSS_FG
+COLOR_ROW_NO_SKU = ThemeColors._LIGHT_ROW_NO_SKU
+COLOR_ROW_NO_CATEGORY = ThemeColors._LIGHT_ROW_NO_CATEGORY
+COLOR_ROW_PROFIT = ThemeColors._LIGHT_ROW_PROFIT
+COLOR_ROW_LOSS = ThemeColors._LIGHT_ROW_LOSS
+
+
+# ---------------------------------------------------------------------------
+# BaseTableView
+# ---------------------------------------------------------------------------
 
 
 class BaseTableView(QTableView):

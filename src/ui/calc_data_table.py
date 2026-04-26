@@ -7,8 +7,7 @@ from PySide6.QtWidgets import QPushButton, QHeaderView
 from src.ui.table_base import (
     BaseTableModel,
     BaseTableView,
-    COLOR_PROFIT_FG,
-    COLOR_LOSS_FG,
+    ThemeColors,
 )
 
 # ---------------------------------------------------------------------------
@@ -99,9 +98,9 @@ class CalcDataModel(BaseTableModel):
             val = self._col_value(self._data[index.row()], col) if index.row() < len(self._data) else None
             if isinstance(val, (int, float)):
                 if val > 0:
-                    return COLOR_PROFIT_FG
+                    return ThemeColors.profit_fg()
                 elif val < 0:
-                    return COLOR_LOSS_FG
+                    return ThemeColors.loss_fg()
             return None
 
         return super().data(index, role)

@@ -1,0 +1,597 @@
+/* ============================================
+ * custom.qss — Supplementary CSS for qt-material's css_file parameter
+ * ============================================
+ * IMPORTANT: All curly braces are doubled ({{ and }}) because qt-material
+ * calls .format(**os.environ) on the css_file content. Single braces would
+ * cause a KeyError crash at runtime.
+ *
+ * This file contains ONLY custom objectName (#id) and [class="..."] selectors
+ * that qt-material does not provide natively. Standard widget styles
+ * (QPushButton base, QLineEdit, QComboBox, etc.) are handled by qt-material.
+ * ============================================ */
+
+/* ── QTableView Item Override ──
+ * Allow model-level BackgroundRole/ForegroundRole to work with qt-material.
+ * Without this, qt-material's QTableView::item background-color overrides model colors.
+ */
+QTableView::item {{
+    background-color: transparent;
+    color: inherit;
+}}
+
+QTableView::item:alternate {{
+    background-color: transparent;
+}}
+
+/* ══════════════════════════════════════════════
+ * Layout — Sidebar & Top Bar
+ * ══════════════════════════════════════════════ */
+QWidget#sidebar {{
+    background: #FFFFFF;
+    border-right: 1px solid #E0E0E0;
+}}
+
+QWidget#topbar {{
+    background: #FFFFFF;
+    border-bottom: 1px solid #E0E0E0;
+    min-height: 72px;
+    max-height: 72px;
+}}
+
+QWidget#syncGridContainer {{
+    background: #F5F5F5;
+}}
+
+/* ══════════════════════════════════════════════
+ * Page Labels
+ * ══════════════════════════════════════════════ */
+QLabel#pageTitle {{
+    font-size: 20px;
+    font-weight: 700;
+    color: #111827;
+}}
+
+QLabel#pageSubtitle {{
+    font-size: 12px;
+    color: #6B7280;
+}}
+
+QLabel#contextBadge {{
+    background: #EEF2FF;
+    color: #4338CA;
+    border: 1px solid #C7D2FE;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+}}
+
+QLabel#contextHint {{
+    font-size: 11px;
+    color: #6B7280;
+}}
+
+QLabel#exchangeRate {{
+    font-weight: 600;
+    font-size: 13px;
+    color: #1C1B1F;
+}}
+
+QLabel#exchangeTimestamp {{
+    color: #888;
+    font-size: 11px;
+}}
+
+QLabel#fieldLabel {{
+    font-size: 11px;
+    color: #64748B;
+    font-weight: 600;
+}}
+
+/* ══════════════════════════════════════════════
+ * Stat Labels (class selectors)
+ * ══════════════════════════════════════════════ */
+QLabel[class="stat-profit"] {{
+    color: #059669;
+    font-weight: 600;
+    font-size: 14px;
+}}
+
+QLabel[class="stat-loss"] {{
+    color: #DC2626;
+    font-weight: 600;
+    font-size: 14px;
+}}
+
+QLabel[class="stat-unmatched"] {{
+    color: #888;
+    font-size: 13px;
+}}
+
+QLabel[class="stat-total"] {{
+    font-weight: 600;
+    font-size: 14px;
+    color: #1C1B1F;
+}}
+
+QLabel[class="stat-label"] {{
+    color: #888;
+    font-size: 11px;
+}}
+
+/* ══════════════════════════════════════════════
+ * Button Class Selectors
+ * ══════════════════════════════════════════════ */
+
+/* Primary Button */
+QPushButton[class="btn-primary"] {{
+    background: #4338CA;
+    border: none;
+    color: #FFFFFF;
+    font-weight: 600;
+    border-radius: 8px;
+}}
+QPushButton[class="btn-primary"]:hover {{
+    background: #3730A3;
+}}
+QPushButton[class="btn-primary"]:pressed {{
+    background: #312E81;
+}}
+QPushButton[class="btn-primary"]:disabled {{
+    background: #C7D2FE;
+    color: #FFFFFF;
+}}
+
+/* Danger / Cancel Button */
+QPushButton[class="btn-danger"] {{
+    background: #DC2626;
+    border: none;
+    color: #FFFFFF;
+    font-weight: 600;
+    border-radius: 8px;
+}}
+QPushButton[class="btn-danger"]:hover {{
+    background: #B91C1C;
+}}
+
+/* Success Button */
+QPushButton[class="btn-success"] {{
+    background: #059669;
+    border: none;
+    color: #FFFFFF;
+    font-weight: 600;
+    border-radius: 8px;
+}}
+QPushButton[class="btn-success"]:hover {{
+    background: #047857;
+}}
+QPushButton[class="btn-success"]:pressed {{
+    background: #065F46;
+}}
+QPushButton[class="btn-success"]:disabled {{
+    background: #E5E7EB;
+    color: #94A3B8;
+}}
+
+/* Outline Button */
+QPushButton[class="btn-outline"] {{
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    color: #4338CA;
+    font-weight: 500;
+    border-radius: 8px;
+}}
+QPushButton[class="btn-outline"]:hover {{
+    background: #F8FAFC;
+    border-color: #A5B4FC;
+}}
+
+/* Icon Button */
+QPushButton[class="btn-icon"] {{
+    background: transparent;
+    border: none;
+    padding: 6px 12px;
+    min-height: 28px;
+    border-radius: 8px;
+}}
+QPushButton[class="btn-icon"]:hover {{
+    background: #EDEDED;
+}}
+
+/* Mini Button */
+QPushButton[class="mini-btn"] {{
+    font-size: 12px;
+    padding: 0;
+    border: 1px solid #C4C4C4;
+    border-radius: 3px;
+    background: transparent;
+    color: #666;
+    min-height: 20px;
+}}
+QPushButton[class="mini-btn"]:hover {{
+    background: #F0F0F0;
+    color: #333;
+}}
+
+/* Column Header Label */
+QLabel[class="col-header"] {{
+    font-weight: bold;
+    color: #666;
+    background: transparent;
+}}
+
+/* Thumbnail Placeholder */
+QLabel[class="thumbnail-placeholder"] {{
+    background: #F5F5F5;
+    border: 1px dashed #C4C4C4;
+    border-radius: 8px;
+    color: #BDBDBD;
+    font-size: 10px;
+}}
+
+/* ══════════════════════════════════════════════
+ * Cell View Button (表格内查看按钮)
+ * ══════════════════════════════════════════════ */
+QPushButton#cellViewBtn {{
+    font-size: 11px;
+    padding: 1px 4px;
+    border: 1px solid #A5B4FC;
+    border-radius: 3px;
+    background: #EEF2FF;
+    color: #4338CA;
+    min-height: 0px;
+    max-height: 18px;
+    min-width: 0px;
+    max-width: 40px;
+}}
+QPushButton#cellViewBtn:hover {{
+    background: #C7D2FE;
+    border-color: #4338CA;
+}}
+
+/* ══════════════════════════════════════════════
+ * Result Table Header
+ * ══════════════════════════════════════════════ */
+QTableView#resultTable {{
+    border: 1px solid #E0E0E0;
+    border-radius: 10px;
+}}
+QTableView#resultTable QHeaderView::section {{
+    background: #F5F5F5;
+    color: #555;
+    font-weight: 600;
+    font-size: 12px;
+    padding: 12px 14px;
+    border: 1px solid #E0E0E0;
+    letter-spacing: 0.3px;
+}}
+
+/* ══════════════════════════════════════════════
+ * Data Card (legacy)
+ * ══════════════════════════════════════════════ */
+QWidget#dataCard {{
+    background: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 14px;
+}}
+QWidget#dataCard QLabel {{
+    background: transparent;
+    border: none;
+}}
+QWidget#dataCard QLabel#cardTitle {{
+    color: #1C1B1F;
+    font-size: 14px;
+    font-weight: bold;
+}}
+QWidget#dataCard QFrame#cardSep {{
+    background: #E8E8E8;
+    border: none;
+    max-height: 1px;
+}}
+
+/* ══════════════════════════════════════════════
+ * Module Card V2 — 分类 accent 色卡片
+ * ══════════════════════════════════════════════ */
+QWidget#moduleCard {{
+    background: #FFFFFF;
+    border: 1.5px solid #D4D4D4;
+    border-bottom: 3px solid #B8B8B8;
+    border-radius: 16px;
+    min-height: 60px;
+}}
+QWidget#moduleCard QLabel {{
+    background: transparent;
+    border: none;
+}}
+QWidget#moduleCard QLabel#moduleIcon {{
+    font-size: 20px;
+    color: #1C1B1F;
+}}
+QWidget#moduleCard QLabel#moduleTitle {{
+    color: #1C1B1F;
+    font-size: 15px;
+    font-weight: bold;
+}}
+QWidget#moduleCard QLabel#moduleVersion {{
+    color: #9CA3AF;
+    font-size: 11px;
+}}
+QWidget#moduleCard QLabel#moduleDesc {{
+    color: #666;
+    font-size: 11px;
+}}
+
+/* Accent separator */
+QFrame#moduleAccentSep {{
+    border: none;
+    max-height: 2px;
+    border-radius: 1px;
+}}
+
+/* Blue accent: 飞书 */
+QWidget#moduleCard[accent="blue"] {{
+    border-bottom-color: #4338CA;
+}}
+QWidget#moduleCard[accent="blue"]:hover {{
+    border-color: #A5B4FC;
+    border-bottom-color: #4338CA;
+    background: #FAFAFF;
+}}
+QWidget#moduleCard[accent="blue"] QFrame#moduleAccentSep {{
+    background: #4338CA;
+}}
+QWidget#moduleCard[accent="blue"] QLabel#moduleIcon {{
+    color: #4338CA;
+}}
+
+/* Green accent: 佣金 */
+QWidget#moduleCard[accent="green"] {{
+    border-bottom-color: #059669;
+}}
+QWidget#moduleCard[accent="green"]:hover {{
+    border-color: #6EE7B7;
+    border-bottom-color: #059669;
+    background: #F0FDF9;
+}}
+QWidget#moduleCard[accent="green"] QFrame#moduleAccentSep {{
+    background: #059669;
+}}
+QWidget#moduleCard[accent="green"] QLabel#moduleIcon {{
+    color: #059669;
+}}
+
+/* Orange accent: 汇率 */
+QWidget#moduleCard[accent="orange"] {{
+    border-bottom-color: #D97706;
+}}
+QWidget#moduleCard[accent="orange"]:hover {{
+    border-color: #FCD34D;
+    border-bottom-color: #D97706;
+    background: #FFFBEB;
+}}
+QWidget#moduleCard[accent="orange"] QFrame#moduleAccentSep {{
+    background: #D97706;
+}}
+QWidget#moduleCard[accent="orange"] QLabel#moduleIcon {{
+    color: #D97706;
+}}
+
+/* Legacy moduleSep */
+QWidget#moduleCard QFrame#moduleSep {{
+    background: #EBEBEB;
+    border: none;
+    max-height: 1px;
+}}
+
+/* Module Remove Button */
+QPushButton#moduleRemoveBtn {{
+    background: transparent;
+    border: none;
+    color: #CCC;
+    font-size: 16px;
+    font-weight: bold;
+    border-radius: 12px;
+    padding: 0px;
+    min-height: 24px;
+    min-width: 24px;
+}}
+QPushButton#moduleRemoveBtn:hover {{
+    background: #FEE2E2;
+    color: #DC2626;
+}}
+QPushButton#moduleRemoveBtn:pressed {{
+    background: #FECACA;
+    color: #B91C1C;
+}}
+
+/* Manage Interface Button */
+QPushButton#btnAddInterface {{
+    background: #F9F9F9;
+    border: 2px dashed #C4C4C4;
+    border-radius: 14px;
+    color: #666;
+    font-size: 14px;
+    font-weight: 500;
+}}
+QPushButton#btnAddInterface:hover {{
+    background: #F0F0FF;
+    border-color: #4338CA;
+    color: #4338CA;
+}}
+QPushButton#btnAddInterface:pressed {{
+    background: #E0E7FF;
+    border-color: #4338CA;
+    color: #4338CA;
+}}
+
+/* ══════════════════════════════════════════════
+ * Info Boxes
+ * ══════════════════════════════════════════════ */
+
+/* Feishu Info Box (Blue) */
+QFrame#feishuInfoBox {{
+    background: #E0E7FF;
+    border: 1px solid #C7D2FE;
+    border-radius: 10px;
+}}
+QFrame#feishuInfoBox QLabel {{
+    background: transparent;
+    border: none;
+}}
+
+/* Commission Info Box (Green) */
+QFrame#commissionInfoBox {{
+    background: #D1FAE5;
+    border: 1px solid #6EE7B7;
+    border-radius: 10px;
+}}
+QFrame#commissionInfoBox QLabel {{
+    background: transparent;
+    border: none;
+}}
+
+/* Rate Box / Exchange Rate Info (Orange) */
+QFrame#rateBox {{
+    background: #FEF3C7;
+    border: 1px solid #FCD34D;
+    border-radius: 10px;
+}}
+QFrame#rateBox QLabel {{
+    background: transparent;
+    border: none;
+}}
+QLabel#rateValue {{
+    font-size: 24px;
+    font-weight: bold;
+    color: #D97706;
+}}
+QLabel#rateHint {{
+    font-size: 11px;
+    color: #92400E;
+}}
+
+/* ══════════════════════════════════════════════
+ * Settings Page Card
+ * ══════════════════════════════════════════════ */
+QGroupBox#settingsCard {{
+    background: #FFFFFF;
+    border: 1px solid #E0E0E0;
+    border-radius: 14px;
+    margin-top: 0px;
+    padding: 22px 18px 18px 18px;
+}}
+QGroupBox#settingsCard::title {{
+    subcontrol-origin: border;
+    subcontrol-position: top center;
+    padding: 4px 18px;
+    color: #1C1B1F;
+    background: #FFFFFF;
+    font-weight: bold;
+    font-size: 14px;
+}}
+
+/* ══════════════════════════════════════════════
+ * Column Separator
+ * ══════════════════════════════════════════════ */
+QFrame#colSep {{
+    color: #E0E0E0;
+    background: #E0E0E0;
+    max-height: 1px;
+    border: none;
+}}
+
+/* ══════════════════════════════════════════════
+ * Discount Dashboard
+ * ══════════════════════════════════════════════ */
+QFrame#summaryCard {{
+    background: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+}}
+
+QLabel#summaryCardTitle {{
+    font-size: 11px;
+    color: #6B7280;
+}}
+
+QLabel#summaryCardValue {{
+    font-size: 18px;
+    font-weight: 700;
+    color: #111827;
+}}
+
+QLabel#summaryCardHint {{
+    font-size: 11px;
+    color: #6B7280;
+}}
+
+QGroupBox#workflowCard {{
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+    background: #FFFFFF;
+}}
+
+QLabel#workflowTitle {{
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+}}
+
+QLabel#workflowHint {{
+    font-size: 12px;
+    color: #6B7280;
+}}
+
+QLabel#workflowBadges {{
+    font-size: 11px;
+    color: #6B7280;
+    padding: 2px 0 6px 0;
+}}
+
+QLabel#fileSummary {{
+    font-size: 12px;
+    color: #475569;
+}}
+
+/* ══════════════════════════════════════════════
+ * Calc Control Grid & Filter Bar
+ * ══════════════════════════════════════════════ */
+QFrame#calcControlGrid,
+QFrame#filterBar {{
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+}}
+
+/* ══════════════════════════════════════════════
+ * Status Bar
+ * ══════════════════════════════════════════════ */
+QStatusBar {{
+    background: #FFFFFF;
+    border-top: 1px solid #E0E0E0;
+    color: #666;
+    font-size: 12px;
+    padding: 4px 14px;
+}}
+
+/* ══════════════════════════════════════════════
+ * Debug Log Window
+ * ══════════════════════════════════════════════ */
+QTextEdit#debugLogTextEdit[class="debug-log-dark"] {{
+    background: #1E1E1E;
+    color: #D4D4D4;
+    border: 1px solid #333;
+}}
+
+QTextEdit#debugLogTextEdit[class="debug-log-light"] {{
+    background: #FFFFFF;
+    color: #202124;
+    border: 1px solid #DADCE0;
+}}
+
+/* ── Settings Tab: API Key Display (readonly, gray text) ── */
+QLineEdit#apiKeyValue {{
+    background: transparent;
+    color: gray;
+    border: none;
+}}

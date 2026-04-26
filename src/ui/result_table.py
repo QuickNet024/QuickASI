@@ -3,9 +3,7 @@
 
 from PySide6.QtCore import Qt
 
-from src.ui.table_base import (BaseTableModel, BaseTableView,
-    STOCK_STATUS_COLORS, COLOR_PROFIT_FG, COLOR_LOSS_FG,
-    COLOR_ROW_NO_SKU, COLOR_ROW_NO_CATEGORY, COLOR_ROW_PROFIT, COLOR_ROW_LOSS)
+from src.ui.table_base import BaseTableModel, BaseTableView, ThemeColors
 
 
 # ---------------------------------------------------------------------------
@@ -94,46 +92,51 @@ class ResultModel(BaseTableModel):
 
         # 1. 库存状态单元格覆盖 — 该单元格最高优先级
         if col_key == "inventory_status" and val:
-            colors = STOCK_STATUS_COLORS.get(str(val))
+            colors = ThemeColors.stock_status_colors().get(str(val))
             if colors:
                 return colors[0]  # bg color
 
         # 2. 行级颜色 (优先级: SKU未匹配 > 类目未匹配 > 盈利 > 亏损)
         cost_matched = row_data.get("cost_matched", True)
         if cost_matched is False:
-            return COLOR_ROW_NO_SKU
+            return ThemeColors.row_no_sku()
 
         category_matched = row_data.get("category_matched", True)
         if category_matched is False:
-            return COLOR_ROW_NO_CATEGORY
+            return ThemeColors.row_no_category()
 
         profit = row_data.get("profit")
         if isinstance(profit, (int, float)):
             if profit > 0:
-                return COLOR_ROW_PROFIT
+                return ThemeColors.row_profit()
             elif profit < 0:
-                return COLOR_ROW_LOSS
+                return ThemeColors.row_loss()
 
         return None  # QSS handles default + alternating
 
     def _foreground(self, index):
-        """ForegroundRole — 利润列文字颜色 + 库存状态单元格文字颜色。"""
+        """ForegroundRole — 行级前景色 + 利润列 + 库存状态单元格颜色。"""
         col_key = self._col_key(index.column())
         row_data = self._data[index.row()]
         val = row_data.get(col_key)
 
         # 1. 库存状态单元格前景色
         if col_key == "inventory_status" and val:
-            colors = STOCK_STATUS_COLORS.get(str(val))
+            colors = ThemeColors.stock_status_colors().get(str(val))
             if colors:
                 return colors[1]  # fg color
 
         # 2. 利润列文字颜色
         if col_key == "profit" and isinstance(val, (int, float)):
             if val > 0:
-                return COLOR_PROFIT_FG
+                return ThemeColors.profit_fg()
             elif val < 0:
-                return COLOR_LOSS_FG
+                return ThemeColors.loss_fg()
+
+        # 3. 有背景色的行 → 用高对比度前景色（解决浅背景+白字看不清的问题）
+        bg = self._background(index)
+        if bg is not None:
+            return ThemeColors.row_fg()
 
         return None
 
