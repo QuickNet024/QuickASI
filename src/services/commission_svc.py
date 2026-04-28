@@ -119,7 +119,8 @@ class CommissionService:
 
     def find_commission_rate(self, category_name: str,
                              platform: str = "wb",
-                             shop_type: str = "local") -> tuple:
+                             shop_type: str = "local",
+                             default_rate: float = None) -> tuple:
         """Find commission rate for a category. Returns (rate, matched, source).
 
         Looks up from dynamic commission tables first, falls back to
@@ -139,10 +140,12 @@ class CommissionService:
             rate = self.db.find_commission_by_category(category_name, platform, shop_type)
             if rate is not None:
                 return rate, True, "category"
-            return Config.DEFAULT_COMMISSION_RATE, False, "default"
+            _fallback = default_rate if default_rate is not None else Config.DEFAULT_COMMISSION_RATE
+            return _fallback, False, "default"
 
         # New table lookup — use first rate column
         rate = self.db.find_rate_in_table(table_name, category_name, "rate_col_0")
         if rate is not None:
             return rate, True, "product"
-        return Config.DEFAULT_COMMISSION_RATE, False, "default"
+        _fallback = default_rate if default_rate is not None else Config.DEFAULT_COMMISSION_RATE
+        return _fallback, False, "default"

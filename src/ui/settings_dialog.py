@@ -33,8 +33,6 @@ class SettingsDialog(QDialog):
         ("member_disc", "会员折扣率", " %", 1, 0, 50, 0.5),
         ("ops_rate", "运营成本率", " %", 1, 0, 50, 0.5),
         ("ad_percent", "广告费率ACOS", " %", 1, 0, 100, 0.5),
-        ("default_commission", "未匹配类目默认佣金率", " %", 1, 0, 100, 0.5),
-        ("target_profit_rate", "目标利润率", " %", 1, 0, 100, 0.5),
     ]
 
     def __init__(self, current_params: dict, parent=None):

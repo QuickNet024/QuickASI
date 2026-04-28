@@ -27,6 +27,7 @@ class ResultModel(BaseTableModel):
         ("profit", "盈亏额", 80),
         ("target_discount", "目标折扣", 70),
         ("target_price", "目标价格", 80),
+        ("target_new_price", "建议新原价", 90),
     ]
 
     def __init__(self, parent=None):
@@ -52,6 +53,11 @@ class ResultModel(BaseTableModel):
             except (ValueError, TypeError):
                 return "-"
         if col_key == "target_price":
+            try:
+                return f"{float(val):.2f}"
+            except (ValueError, TypeError):
+                return "-"
+        if col_key == "target_new_price":
             try:
                 return f"{float(val):.2f}"
             except (ValueError, TypeError):
@@ -150,7 +156,7 @@ class ResultTable(BaseTableView):
 
     MATCH_COLUMN_KEYS = {"shipping_fee", "inventory_status",
                          "cost_matched", "commission_source", "product_cost"}
-    CALC_COLUMN_KEYS = {"breakeven", "profit", "target_discount", "target_price"}
+    CALC_COLUMN_KEYS = {"breakeven", "profit", "target_discount", "target_price", "target_new_price"}
 
     def __init__(self, parent=None):
         model = ResultModel()

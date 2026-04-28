@@ -36,6 +36,8 @@ class Config:
         "ops_rate": 3.0,             # 运营成本率 (%)
         "member_disc": 3.0,          # 会员折扣率 (%)
         "target_profit_rate": 10.0,  # 目标利润率 (%)
+        "target_profit_amount": 20.0,  # 目标利润额 (CNY)
+        "calc_mode": "profit_rate",    # 计算模式: profit_rate / profit_amount
         "default_commission": 30.0,  # 默认佣金率(未匹配时) (%)
     }
 

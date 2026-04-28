@@ -130,8 +130,8 @@
   },
   "sync.thread_count": 4,
   "image.download_path": "data/image_cache",
-  "sync.rate_limit_per_sec": 10.0,
+  "sync.rate_limit_per_sec": 5.0,
   "sync.request_timeout_sec": 30,
   "image.incremental_mode": true,
-  "image.download_thread_count": 3
+  "image.download_thread_count": 4
 }

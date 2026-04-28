@@ -107,8 +107,9 @@ class DatabaseManager:
         conn = sqlite3.connect(self._db_path, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
+        conn.execute("PRAGMA cache_size=-2000")   # ~2MB cache
         conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA busy_timeout=5000")
         try:
             with conn:
                 yield conn
@@ -286,7 +287,8 @@ class DatabaseManager:
                 crisk REAL,
                 r_total REAL,
                 total_fixed REAL,
-                calc_batch TEXT DEFAULT ''
+                calc_batch TEXT DEFAULT '',
+                target_new_price REAL
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_calc_import_id ON calc_results(import_row_id)")
@@ -361,6 +363,7 @@ class DatabaseManager:
             ("crisk", "REAL", "NULL"),
             ("r_total", "REAL", "NULL"),
             ("total_fixed", "REAL", "NULL"),
+            ("target_new_price", "REAL", "NULL"),
         ]:
             try:
                 conn.execute(f"ALTER TABLE calc_results ADD COLUMN {col_name} {col_type} DEFAULT {col_default}")
@@ -871,7 +874,7 @@ class DatabaseManager:
          18=breakeven, 19=profit, 20=max_discount, 21=min_price,
          22=target_discount, 23=target_price,
          24=cbase, 25=crisk, 26=r_total, 27=total_fixed,
-         28=calc_batch)
+         28=calc_batch, 29=target_new_price)
         """
         sql = """SELECT id, import_row_id, sku_matched, category_matched,
                  matched_product_id, product_cost, distribution_price,
@@ -882,7 +885,7 @@ class DatabaseManager:
                  discounted_price, shipping_fee, breakeven, profit,
                  max_discount, min_price, target_discount, target_price,
                  cbase, crisk, r_total, total_fixed,
-                 calc_batch
+                 calc_batch, target_new_price
                  FROM calc_results"""
         with self._get_conn() as conn:
             if batch:

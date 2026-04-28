@@ -117,6 +117,12 @@ class _ExchangeRateWidget(QWidget):
         self.btn_settings.clicked.connect(self._on_settings)
         layout.addWidget(self.btn_settings)
 
+    def _cleanup_worker(self, worker_attr: str = '_worker'):
+        old = getattr(self, worker_attr, None)
+        if old is not None:
+            old.deleteLater()
+            setattr(self, worker_attr, None)
+
     def _on_sync(self):
         if self._worker and self._worker.isRunning():
             return
@@ -124,12 +130,14 @@ class _ExchangeRateWidget(QWidget):
         self.btn_sync.setText("同步中...")
         if self._signals:
             self._signals.sync_started.emit()
+        self._cleanup_worker()
         self._worker = ExchangeRateWorker(self.db)
         self._worker.finished.connect(self._on_done)
         self._worker.error.connect(self._on_error)
         self._worker.start()
 
     def _on_done(self, data):
+        self._worker = None
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText("同步汇率")
         rate = data["cny_to_rub"]
@@ -140,6 +148,7 @@ class _ExchangeRateWidget(QWidget):
             self._signals.rate_updated.emit(rate)
 
     def _on_error(self, err):
+        self._worker = None
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText("同步汇率")
         self.lbl_rate.setText("同步失败")
@@ -169,6 +178,7 @@ class _ExchangeRateWidget(QWidget):
             if self._worker.isRunning():
                 self._worker.terminate()
                 self._worker.wait(1000)
+        self._cleanup_worker()
 
 
 # 自动注册

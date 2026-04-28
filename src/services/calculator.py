@@ -15,7 +15,7 @@ Formulas:
 """
 
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Optional, Tuple
 import math
 import re
 
@@ -50,7 +50,9 @@ class CalculationParams:
     ops_rate: float = 3.0
     member_disc: float = 3.0
     target_profit_rate: float = 10.0
+    target_profit_amount: float = 20.0
     default_commission: float = 30.0
+    calc_mode: str = "profit_rate"  # profit_rate / profit_amount
     shipping_config: ShippingConfig = None  # None = use default WB跨境 formula
 
 
@@ -169,6 +171,28 @@ class LossCalculator:
             return 0
         raw = math.floor((1 - target_price / current_price) * 100)
         return min(95, raw)
+
+    # ── Target price for fixed profit amount ──
+    # target_price = (total_fixed + fixed_profit) / (1 - r_total)
+    def calc_target_price_fixed_profit(self, total_fixed: float, r_total: float, fixed_profit: float) -> float:
+        """Target price for a fixed profit amount per item.
+        target_price = (total_fixed + fixed_profit) / (1 - r_total)
+        """
+        denominator = 1 - r_total
+        return (total_fixed + fixed_profit) / denominator if denominator > 0 else float('inf')
+
+    # ── Target new original price ──
+    # target_new_price = target_price / (1 - current_discount/100)
+    @staticmethod
+    def calc_target_new_price(target_price: float, current_discount: float) -> Optional[float]:
+        """New original price needed to reach target_price while keeping current discount.
+        target_new_price = target_price / (1 - current_discount/100)
+        Returns None if current_discount >= 100 (division by zero).
+        """
+        if current_discount is None:
+            current_discount = 0.0
+        denom = 1 - current_discount / 100
+        return target_price / denom if denom > 0 else None
 
     # ── Full calculation result ──
     def calc_full_result(self, current_price: float, product_cost: float,

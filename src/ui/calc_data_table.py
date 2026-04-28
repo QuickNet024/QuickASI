@@ -28,18 +28,20 @@ _COLUMNS = [
     ("total_fixed", "总固定成本", 80),
     ("breakeven", "盈亏平衡点", 90),
     ("profit", "盈亏额", 80),
+    ("current_profit_rate", "当前利润率", 80),
     ("max_discount", "保本折扣", 70),
     ("target_discount", "目标折扣", 70),
     ("min_price", "保本价格", 80),
     ("target_price", "目标价格", 80),
+    ("target_new_price", "建议新原价", 90),
     ("_view", "操作", 56),
 ]
 
-_PCT_KEYS = {"current_discount", "max_discount", "target_discount"}
+_PCT_KEYS = {"current_discount", "max_discount", "target_discount", "current_profit_rate"}
 _MONEY_KEYS = {
     "current_price", "discounted_price", "product_cost",
     "shipping_fee", "cbase", "crisk", "total_fixed",
-    "breakeven", "profit", "min_price", "target_price",
+    "breakeven", "profit", "min_price", "target_price", "target_new_price",
 }
 
 
@@ -93,8 +95,8 @@ class CalcDataModel(BaseTableModel):
         if key == "_view":
             return None
 
-        # 前景色: profit 列正绿负红
-        if role == Qt.ItemDataRole.ForegroundRole and key == "profit":
+        # 前景色: profit / current_profit_rate 列正绿负红
+        if role == Qt.ItemDataRole.ForegroundRole and key in ("profit", "current_profit_rate"):
             val = self._col_value(self._data[index.row()], col) if index.row() < len(self._data) else None
             if isinstance(val, (int, float)):
                 if val > 0:
@@ -116,7 +118,7 @@ class CalcDataTable(BaseTableView):
     MATCH_COLUMN_KEYS = {"product_cost", "shipping_fee"}
     CALC_COLUMN_KEYS = {
         "breakeven", "profit", "max_discount", "target_discount",
-        "min_price", "target_price",
+        "min_price", "target_price", "target_new_price",
     }
 
     view_clicked = Signal(int)

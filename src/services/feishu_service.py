@@ -63,9 +63,10 @@ class _RateLimiter:
         with self._lock:
             now = time.monotonic()
             elapsed = now - self._last_time
-            if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-            self._last_time = time.monotonic()
+            wait_time = max(0, self._min_interval - elapsed)
+            self._last_time = now + wait_time
+        if wait_time > 0:
+            time.sleep(wait_time)
 
     @property
     def rate(self) -> float:
@@ -123,6 +124,7 @@ class FeishuService:
         self._abort = False   # 同步中止标记
         self._consecutive_failures = 0  # 连续失败计数
         self._max_consecutive_failures = 20  # 连续失败阈值，提高以避免并发Sheet互相连带中止
+        self._tls = threading.local()  # 线程本地存储，用于 requests.Session 复用
 
     # ═══ 配置访问接口 ═══════════════════════════
 
@@ -166,11 +168,17 @@ class FeishuService:
 
     # ═══ API 基础方法 ═══════════════════════════
 
+    def _get_session(self) -> requests.Session:
+        """返回线程本地的 requests.Session（线程安全复用 TCP 连接）"""
+        if not hasattr(self._tls, 'session') or self._tls.session is None:
+            self._tls.session = requests.Session()
+        return self._tls.session
+
     def get_tenant_token(self) -> str:
         self._limiter.wait()
         url = f"{self.base_url}/open-apis/auth/v3/tenant_access_token/internal"
         payload = {"app_id": self.app_id, "app_secret": self.app_secret}
-        resp = requests.post(url, json=payload, timeout=10)
+        resp = self._get_session().post(url, json=payload, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:
@@ -184,7 +192,7 @@ class FeishuService:
         self._limiter.wait()
         url = f"{self.base_url}/open-apis/sheets/v3/spreadsheets/{self.spreadsheet_token}/sheets/query"
         headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = self._get_session().get(url, headers=headers, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:
@@ -402,7 +410,7 @@ class FeishuService:
                 return title, []
 
         # 降低并发数避免同一文档被并发阻塞（飞书官方建议）
-        fallback_threads = min(2, sheet_count)
+        fallback_threads = min(4, sheet_count)
         with ThreadPoolExecutor(max_workers=fallback_threads) as pool:
             futures = {pool.submit(_fetch_one, item): item[1] for item in active_sheets}
 
@@ -568,7 +576,7 @@ class FeishuService:
                         continue
                     try:
                         self._limiter.wait()
-                        resp = requests.get(url, timeout=self._request_timeout)
+                        resp = self._get_session().get(url, timeout=self._request_timeout)
                         if resp.status_code == 200:
                             local_path = os.path.join(cache_dir, f"{file_token}.png")
                             if os.path.exists(local_path):
@@ -855,7 +863,7 @@ class FeishuService:
                     "valueRenderOption": "UnformattedValue",
                     "dateTimeRenderOption": "FormattedString"
                 }
-                resp = requests.get(url, headers=headers, params=params, timeout=self._request_timeout)
+                resp = self._get_session().get(url, headers=headers, params=params, timeout=self._request_timeout)
                 resp.raise_for_status()
                 data = resp.json()
                 if data.get("code") != 0:
@@ -895,7 +903,7 @@ class FeishuService:
             "valueRenderOption": "UnformattedValue",
             "dateTimeRenderOption": "FormattedString"
         }
-        resp = requests.get(url, headers=headers, params=params, timeout=60)
+        resp = self._get_session().get(url, headers=headers, params=params, timeout=60)
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:
@@ -909,7 +917,7 @@ class FeishuService:
         url = f"{self.base_url}/open-apis/drive/v1/medias/batch_get_tmp_download_url"
         headers = {"Authorization": f"Bearer {token}"}
         params = [("file_tokens", t) for t in file_tokens]
-        resp = requests.get(url, headers=headers, params=params, timeout=10)
+        resp = self._get_session().get(url, headers=headers, params=params, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         if data.get("code") != 0:

@@ -9,9 +9,9 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QComboBox,
     QLabel, QTableWidget, QTableWidgetItem, QAbstractItemView,
     QHeaderView, QStyledItemDelegate, QStyle, QMenu, QApplication,
-    QPushButton, QSizePolicy
+    QPushButton, QSizePolicy, QToolTip
 )
-from PySide6.QtCore import Qt, QSize, QRect, Signal, QPoint
+from PySide6.QtCore import Qt, QSize, QRect, Signal, QPoint, QTimer
 from PySide6.QtGui import (QPixmap, QColor, QPen, QPainter, QPixmapCache,
                             QKeySequence, QActionGroup, QAction)
 
@@ -137,7 +137,11 @@ class ProductViewer(QWidget):
         self._search_box = QLineEdit()
         self._search_box.setPlaceholderText("全表搜索...")
         self._search_box.setClearButtonEnabled(True)
-        self._search_box.textChanged.connect(self._apply_all_filters)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._apply_all_filters)
+        self._search_box.textChanged.connect(self._on_search_text_changed)
         toolbar.addWidget(self._search_box, stretch=1)
 
         self._sheet_filter = QComboBox()
@@ -167,7 +171,7 @@ class ProductViewer(QWidget):
 
         # ── 表格 ──
         self._table = QTableWidget()
-        self._table.setEditTriggers(QTableWidget.DoubleClicked | QTableWidget.EditKeyPressed)
+        self._table.setEditTriggers(QTableWidget.EditKeyPressed)
         self._table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
         self._table.setAlternatingRowColors(True)
         self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -178,6 +182,9 @@ class ProductViewer(QWidget):
         self._table.setShowGrid(True)
         self._table.setSortingEnabled(False)  # 自己控制排序
         self._table.cellChanged.connect(self._on_cell_changed)
+
+        # 双击复制单元格内容
+        self._table.cellDoubleClicked.connect(self._on_cell_double_clicked)
 
         # 表头：点击排序 + 右键筛选
         header = self._table.horizontalHeader()
@@ -368,7 +375,7 @@ class ProductViewer(QWidget):
         self._table.horizontalHeader().setStretchLastSection(True)
 
         # 行高
-        row_h = 56 if self._img_col_idx >= 0 else 32
+        row_h = 56 if self._img_col_idx >= 0 else 36
         for i in range(self._table.rowCount()):
             self._table.setRowHeight(i, row_h)
 
@@ -644,6 +651,14 @@ class ProductViewer(QWidget):
             self._col_filters.pop(col_idx, None)
             self._populate_table()
 
+    def _on_search_text_changed(self, text):
+        """搜索防抖：空字符串立即触发，否则延迟300ms"""
+        if not text:
+            self._search_timer.stop()
+            self._apply_all_filters()
+        else:
+            self._search_timer.start()
+
     def _apply_all_filters(self):
         """搜索框或Sheet下拉变化时重新填充表格"""
         self._populate_table()
@@ -725,6 +740,20 @@ class ProductViewer(QWidget):
         self._loaded = False
         self.load_data()
 
+    def _on_cell_double_clicked(self, row: int, col: int):
+        """双击单元格时复制其内容到剪贴板。"""
+        item = self._table.item(row, col)
+        if item and item.text():
+            QApplication.clipboard().setText(item.text())
+            rect = self._table.visualItemRect(item)
+            QToolTip.showText(
+                self._table.viewport().mapToGlobal(rect.center()),
+                f"已复制: {item.text()[:50]}",
+                self._table,
+                rect,
+                1500
+            )
+
     @property
     def table(self):
         return self._table
@@ -779,7 +808,11 @@ class CommissionViewer(QWidget):
         self._search_box = QLineEdit()
         self._search_box.setPlaceholderText("全表搜索...")
         self._search_box.setClearButtonEnabled(True)
-        self._search_box.textChanged.connect(self._apply_all_filters)
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._apply_all_filters)
+        self._search_box.textChanged.connect(self._on_search_text_changed)
         toolbar.addWidget(self._search_box, stretch=1)
 
         self._table_filter = QComboBox()
@@ -816,6 +849,8 @@ class CommissionViewer(QWidget):
         header.sectionClicked.connect(self._on_header_clicked)
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._on_header_context_menu)
+
+        self._table.cellDoubleClicked.connect(self._on_cell_double_clicked)
 
         layout.addWidget(self._table)
 
@@ -1092,6 +1127,14 @@ class CommissionViewer(QWidget):
         if table_name:
             self._load_table_data(table_name)
 
+    def _on_search_text_changed(self, text):
+        """搜索防抖：空字符串立即触发，否则延迟300ms"""
+        if not text:
+            self._search_timer.stop()
+            self._apply_all_filters()
+        else:
+            self._search_timer.start()
+
     def _apply_all_filters(self):
         """搜索框变化时重新填充表格"""
         self._populate_table()
@@ -1111,4 +1154,18 @@ class CommissionViewer(QWidget):
     def refresh(self):
         self._loaded = False
         self.load_data()
+
+    def _on_cell_double_clicked(self, row: int, col: int):
+        """双击单元格时复制其内容到剪贴板。"""
+        item = self._table.item(row, col)
+        if item and item.text():
+            QApplication.clipboard().setText(item.text())
+            rect = self._table.visualItemRect(item)
+            QToolTip.showText(
+                self._table.viewport().mapToGlobal(rect.center()),
+                f"已复制: {item.text()[:50]}",
+                self._table,
+                rect,
+                1500
+            )
 

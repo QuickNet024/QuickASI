@@ -6,7 +6,7 @@
 """
 
 from PySide6.QtCore import QAbstractTableModel, QSortFilterProxyModel, Qt, QModelIndex
-from PySide6.QtWidgets import QTableView, QHeaderView, QMenu, QAbstractItemView
+from PySide6.QtWidgets import QTableView, QHeaderView, QMenu, QAbstractItemView, QApplication, QToolTip
 from PySide6.QtGui import QColor, QAction, QActionGroup
 
 
@@ -366,6 +366,7 @@ class BaseTableView(QTableView):
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.verticalHeader().setVisible(False)
+        self.verticalHeader().setDefaultSectionSize(36)
         self.setShowGrid(True)
 
         header = self.horizontalHeader()
@@ -378,6 +379,9 @@ class BaseTableView(QTableView):
         header.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         header.customContextMenuRequested.connect(self._on_header_context_menu)
 
+        # 双击复制单元格内容
+        self.doubleClicked.connect(self._copy_cell_text)
+
     def _set_column_widths(self):
         header = self.horizontalHeader()
         for col_idx, (_, _, width) in enumerate(self._model.COLUMNS):
@@ -387,6 +391,21 @@ class BaseTableView(QTableView):
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
     # -- 3 态排序 -----------------------------------------------------------
+
+    # -- 双击复制单元格内容 -------------------------------------------------
+
+    def _copy_cell_text(self, index):
+        """双击单元格时复制其显示文本到剪贴板。"""
+        text = self._proxy.data(index, Qt.ItemDataRole.DisplayRole)
+        if text is not None and str(text) and str(text) != "-":
+            QApplication.clipboard().setText(str(text))
+            QToolTip.showText(
+                self.viewport().mapToGlobal(self.visualRect(index).center()),
+                f"已复制: {str(text)[:50]}",
+                self,
+                self.visualRect(index),
+                1500
+            )
 
     def _on_header_clicked(self, col: int):
         if col == 0:  # 行号列不参与排序

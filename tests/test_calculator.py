@@ -308,3 +308,72 @@ class TestCalcFullResult:
         r = calc.calc_full_result(230, 132, 51, 14, 5)
         expected = r.total_fixed / (1 - r.r_total - 0.10)
         assert r.target_price == pytest.approx(expected, abs=0.01)
+
+
+# ══════════════════════════════════════════════════════════════════
+#  TestFixedProfit  —  (total_fixed + fixed_profit) / (1 - r_total)
+# ══════════════════════════════════════════════════════════════════
+
+class TestFixedProfit:
+    """Tests for calc_target_price_fixed_profit."""
+
+    def test_fixed_profit_basic(self):
+        """total_fixed=80, r_total=0.25, fixed_profit=20 → target_price=133.33"""
+        calc = LossCalculator(CalculationParams())
+        result = calc.calc_target_price_fixed_profit(80.0, 0.25, 20.0)
+        assert abs(result - 133.33) < 0.01  # (80+20)/(1-0.25) = 133.33
+
+    def test_fixed_profit_zero(self):
+        """fixed_profit=0 → target_price equals breakeven"""
+        calc = LossCalculator(CalculationParams())
+        total_fixed = 80.0
+        r_total = 0.25
+        fixed_result = calc.calc_target_price_fixed_profit(total_fixed, r_total, 0.0)
+        breakeven_expected = total_fixed / (1 - r_total)  # 106.67
+        assert abs(fixed_result - breakeven_expected) < 0.01
+
+    def test_fixed_profit_inf(self):
+        """r_total=1.0 → denominator=0 → inf"""
+        calc = LossCalculator(CalculationParams())
+        result = calc.calc_target_price_fixed_profit(80.0, 1.0, 20.0)
+        assert result == float('inf')
+
+    def test_profit_rate_unchanged(self):
+        """Verify existing profit_rate mode is NOT affected (regression test)"""
+        calc = LossCalculator(CalculationParams(target_profit_rate=10.0))
+        result = calc.calc_target_price(80.0, 0.25, 10.0)
+        # total_fixed=80, r_total=0.25, rate=10% → 80/(1-0.25-0.10) = 80/0.65 = 123.08
+        assert abs(result - 123.08) < 0.01
+
+
+# ══════════════════════════════════════════════════════════════════
+#  TestTargetNewPrice  —  target_price / (1 - current_discount/100)
+# ══════════════════════════════════════════════════════════════════
+
+class TestTargetNewPrice:
+    """Tests for calc_target_new_price static method."""
+
+    def test_basic(self):
+        """target_price=900, discount=20% → target_new_price=1125"""
+        result = LossCalculator.calc_target_new_price(900.0, 20.0)
+        assert abs(result - 1125.0) < 0.01  # 900 / 0.8 = 1125
+
+    def test_zero_discount(self):
+        """target_price=100, discount=0 → target_new_price=100"""
+        result = LossCalculator.calc_target_new_price(100.0, 0.0)
+        assert abs(result - 100.0) < 0.01
+
+    def test_full_discount(self):
+        """target_price=100, discount=100 → None (division by zero)"""
+        result = LossCalculator.calc_target_new_price(100.0, 100.0)
+        assert result is None
+
+    def test_null_discount(self):
+        """target_price=100, discount=None → 100 (treat as 0)"""
+        result = LossCalculator.calc_target_new_price(100.0, None)
+        assert abs(result - 100.0) < 0.01
+
+    def test_negative_discount(self):
+        """target_price=100, discount=-10 → target_new_price=90.91"""
+        result = LossCalculator.calc_target_new_price(100.0, -10.0)
+        assert abs(result - (100.0 / 1.10)) < 0.01  # 90.91

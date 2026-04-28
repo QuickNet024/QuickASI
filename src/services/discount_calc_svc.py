@@ -27,6 +27,27 @@ class DiscountCalcService:
         self._feishu_db = feishu_db
         self._commission_db = commission_db
         self._shipping_svc = shipping_svc
+        self._cached_combined = None
+        self._matcher = None
+        self._matcher_cache_valid = False
+
+    def invalidate_cache(self):
+        """Invalidate combined data cache. Call after import/match/calculate."""
+        self._cached_combined = None
+
+    def invalidate_matcher(self):
+        """Invalidate ProductMatcher cache. Call after Feishu sync."""
+        self._matcher_cache_valid = False
+
+    def _get_matcher(self):
+        """Get or create cached ProductMatcher."""
+        if self._matcher is not None and self._matcher_cache_valid:
+            return self._matcher
+        from src.services.matcher import ProductMatcher
+        self._matcher = ProductMatcher(self._feishu_db)
+        self._matcher.preload_all()
+        self._matcher_cache_valid = True
+        return self._matcher
 
     def import_from_excel(self, file_path: str) -> int:
         """导入Excel文件到import_rows表。返回导入行数。"""
@@ -61,6 +82,7 @@ class DiscountCalcService:
 
         count = self.db.insert_import_rows_batch(import_rows)
         logger.info(f"Imported {count} rows from {file_path}, batch={batch}")
+        self.invalidate_cache()
         return count
 
     @staticmethod
@@ -105,6 +127,7 @@ class DiscountCalcService:
         # Setup matchers
         matcher = ProductMatcher(self._feishu_db)
         comm_svc = CommissionService(self._commission_db)
+        _default_commission = params_dict.get('default_commission', Config.DEFAULT_COMMISSION_RATE)
 
         calc_batch = datetime.now().isoformat()
         results = []
@@ -155,19 +178,14 @@ class DiscountCalcService:
             platform = parts[0] if parts else "wb"
             shop_type = parts[1] if len(parts) > 1 else "local"
 
-            category = result.product_category or str(raw[2] or "")  # raw category column
+            category = result.product_category or str(raw[3] or "")  # raw[3] = category column
             comm_rate, matched, source = comm_svc.find_commission_rate(
-                category, platform=platform, shop_type=shop_type)
+                category, platform=platform, shop_type=shop_type, default_rate=_default_commission)
 
             result.commission_rate = comm_rate
-            _SOURCE_MAP = {"product": "商品级", "category": "品类级", "default": f"未匹配(默认{Config.DEFAULT_COMMISSION_RATE:.0f}%)"}
+            _SOURCE_MAP = {"product": "商品级", "category": "品类级", "default": f"未匹配(默认{_default_commission:.0f}%)"}
             result.commission_source = _SOURCE_MAP.get(source, source)
             result.category_matched = matched
-
-            # Use Config default commission rate when no match
-            if not matched:
-                comm_rate = Config.DEFAULT_COMMISSION_RATE
-                result.commission_rate = comm_rate
 
             # ── Step 4: Calculate ──
             discount = self._parse_discount(raw[12])  # current_discount column
@@ -220,7 +238,9 @@ class DiscountCalcService:
     def match(self, commission_table: str = "commission_wb_cross_border",
               exchange_rate: float = 1.0,
               progress_callback=None,
-              should_stop=None) -> int:
+              should_stop=None,
+              default_commission: float = None,
+              category_source: str = "feishu") -> int:
         """Step 1: Match SKU + commission + calculate shipping.
         Stores intermediate results in calc_results (profit fields = None).
         Returns matched count.
@@ -233,15 +253,17 @@ class DiscountCalcService:
         if not raw_rows:
             return 0
 
+        _default_commission = default_commission if default_commission is not None else Config.DEFAULT_COMMISSION_RATE
+
         # Determine shop_type from commission_table
         shop_type = "wb_local" if "local" in (commission_table or "") else "wb_cross_border"
 
-        matcher = ProductMatcher(self._feishu_db)
+        matcher = self._get_matcher()
         comm_svc = CommissionService(self._commission_db)
         match_batch = datetime.now().isoformat()
 
         # ── 性能优化: 预加载到内存，消除逐行DB查询 ──
-        matcher.preload_all()
+        # matcher already preloaded via _get_matcher()
 
         # 缓存佣金表列表
         _cached_commission_tables = comm_svc.db.get_commission_tables()
@@ -261,9 +283,9 @@ class DiscountCalcService:
                 product_name = str(row[2] or "").strip()
                 category_name = str(row[1] or "").strip()
                 try:
-                    rate_value = float(row[3]) if row[3] is not None else Config.DEFAULT_COMMISSION_RATE
+                    rate_value = float(row[3]) if row[3] is not None else _default_commission
                 except (ValueError, TypeError):
-                    rate_value = Config.DEFAULT_COMMISSION_RATE
+                    rate_value = _default_commission
                 if product_name and product_name not in _commission_lookup:
                     _commission_lookup[product_name] = ("product", rate_value)
                 if category_name and category_name not in _commission_lookup:
@@ -312,38 +334,42 @@ class DiscountCalcService:
                 continue
 
             # Match category → Commission rate（使用缓存的佣金表列表）
-            category = result.product_category or str(raw[2] or "")
+            if category_source == "excel":
+                category = str(raw[3] or "")
+            else:
+                category = result.product_category or str(raw[3] or "")
             if _tbl_name in _cached_table_names:
                 cached_comm = _commission_lookup.get(category)
                 if cached_comm is not None:
                     source, comm_rate = cached_comm
                     matched = True
                 else:
-                    comm_rate = Config.DEFAULT_COMMISSION_RATE
+                    comm_rate = _default_commission
                     matched, source = False, "default"
             else:
-                comm_rate = comm_svc.db.find_commission_by_product(category, platform, shop_t)
-                if comm_rate is not None:
+                comm_svc_rate = comm_svc.db.find_commission_by_product(category, platform, shop_t)
+                if comm_svc_rate is not None:
                     matched, source = True, "product"
                 else:
-                    comm_rate = comm_svc.db.find_commission_by_category(category, platform, shop_t)
-                    if comm_rate is not None:
+                    comm_svc_rate = comm_svc.db.find_commission_by_category(category, platform, shop_t)
+                    if comm_svc_rate is not None:
                         matched, source = True, "category"
                     else:
-                        comm_rate = Config.DEFAULT_COMMISSION_RATE
+                        comm_svc_rate = _default_commission
                         matched, source = False, "default"
+                comm_rate = comm_svc_rate
 
             result.commission_rate = comm_rate
             _SOURCE_MAP = {
                 "product": "商品级",
                 "category": "品类级",
-                "default": f"未匹配(默认{Config.DEFAULT_COMMISSION_RATE:.0f}%)",
+                "default": f"未匹配(默认{_default_commission:.0f}%)",
             }
             result.commission_source = _SOURCE_MAP.get(source, source)
             result.category_matched = matched
 
             if not matched:
-                result.commission_rate = Config.DEFAULT_COMMISSION_RATE
+                result.commission_rate = _default_commission
 
             # Calculate shipping using ShippingService
             l, w, h = LossCalculator.parse_dimensions(result.dimensions)
@@ -382,6 +408,7 @@ class DiscountCalcService:
         self.db.clear_calc_results()
         count = self.db.insert_calc_results_batch(results)
         logger.info(f"Matched {count} rows, shop_type={shop_type}, batch={match_batch}")
+        self.invalidate_cache()
         return count
 
     def calculate_from_match(self, params_dict: dict, exchange_rate: float = 1.0) -> int:
@@ -404,7 +431,7 @@ class DiscountCalcService:
         updated = []
 
         for r in results:
-            # r is a tuple from calc_results (29 columns):
+            # r is a tuple from calc_results (30 columns):
             # (0=id, 1=import_row_id, 2=sku_matched, 3=category_matched,
             #  4=matched_product_id, 5=product_cost, 6=distribution_price,
             #  7=product_category, 8=dimensions, 9=weight,
@@ -414,7 +441,7 @@ class DiscountCalcService:
             #  18=breakeven, 19=profit, 20=max_discount, 21=min_price,
             #  22=target_discount, 23=target_price,
             #  24=cbase, 25=crisk, 26=r_total, 27=total_fixed,
-            #  28=calc_batch)
+            #  28=calc_batch, 29=target_new_price)
 
             # Only calculate if sku was matched and we have product_cost
             if not r[2]:  # sku_matched == False
@@ -464,12 +491,23 @@ class DiscountCalcService:
             breakeven = calc.calc_breakeven(product_cost, shipping_fee)
             profit = calc.calc_profit(selling_price, product_cost, shipping_fee)
             min_price = calc.calc_min_price_no_loss(breakeven)
-            target_price = calc.calc_target_price(total_fixed, r_total, params.target_profit_rate)
+            # Branch target_price calculation based on calc_mode
+            if getattr(params, 'calc_mode', 'profit_rate') == 'fixed_profit':
+                # Convert fixed_profit to CNY if needed (follows shop currency)
+                fixed_profit = params.target_profit_amount
+                if exchange_rate > 0 and exchange_rate != 1.0:
+                    fixed_profit = fixed_profit / exchange_rate
+                target_price = calc.calc_target_price_fixed_profit(total_fixed, r_total, fixed_profit)
+            else:
+                target_price = calc.calc_target_price(total_fixed, r_total, params.target_profit_rate)
 
             # Discounts are calculated against original price (优惠折扣)
             # max_discount: how much % off from original to reach breakeven
             max_discount = calc.calc_max_discount_no_loss(original_price, breakeven)
             target_discount = calc.calc_target_discount(original_price, target_price)
+
+            # Compute target_new_price: what new original price to set if keeping current discount
+            target_new_price = LossCalculator.calc_target_new_price(target_price, discount)
 
             updated.append({
                 "id": r[0],
@@ -483,6 +521,7 @@ class DiscountCalcService:
                 "min_price": round(min_price, 2),
                 "target_discount": target_discount,
                 "target_price": round(target_price, 2) if target_price else None,
+                "target_new_price": round(target_new_price, 2) if target_new_price is not None else None,
                 "cbase": round(cbase, 2),
                 "crisk": round(crisk, 2),
                 "r_total": round(r_total, 4),
@@ -492,38 +531,41 @@ class DiscountCalcService:
 
         count = self._update_calc_results(updated)
         logger.info(f"Calculated {count} results from match, batch={calc_batch}")
+        self.invalidate_cache()
         return count
 
     def _update_calc_results(self, updates: list) -> int:
-        """Update calc_results rows with calculated values."""
+        """Update calc_results rows with calculated values — 批量executemany."""
         if not updates:
             return 0
+        data = [
+            (u["product_cost"], u["shipping_fee"], u["commission_rate"],
+             u["discounted_price"], u["breakeven"], u["profit"],
+             u["max_discount"], u["min_price"],
+             u["target_discount"], u["target_price"],
+             u["cbase"], u["crisk"], u["r_total"], u["total_fixed"],
+             u.get("target_new_price"), u["calc_batch"], u["id"])
+            for u in updates
+        ]
         with self.db._get_conn() as conn:
-            for u in updates:
-                conn.execute("""
-                    UPDATE calc_results SET
-                        product_cost=?, shipping_fee=?, commission_rate=?,
-                        discounted_price=?, breakeven=?, profit=?,
-                        max_discount=?, min_price=?,
-                        target_discount=?, target_price=?,
-                        cbase=?, crisk=?, r_total=?, total_fixed=?,
-                        calc_batch=?
-                    WHERE id=?
-                """, (
-                    u["product_cost"], u["shipping_fee"], u["commission_rate"],
-                    u["discounted_price"], u["breakeven"], u["profit"],
-                    u["max_discount"], u["min_price"],
-                    u["target_discount"], u["target_price"],
-                    u["cbase"], u["crisk"], u["r_total"], u["total_fixed"],
-                    u["calc_batch"],
-                    u["id"],
-                ))
+            conn.executemany("""
+                UPDATE calc_results SET
+                    product_cost=?, shipping_fee=?, commission_rate=?,
+                    discounted_price=?, breakeven=?, profit=?,
+                    max_discount=?, min_price=?,
+                    target_discount=?, target_price=?,
+                    cbase=?, crisk=?, r_total=?, total_fixed=?,
+                    target_new_price=?, calc_batch=?
+                WHERE id=?
+            """, data)
         return len(updates)
 
     def get_import_data(self) -> list:
         """获取导入数据和计算结果的联合视图。
         返回 [(import_row_tuple, calc_result_tuple_or_None), ...]
         """
+        if self._cached_combined is not None:
+            return self._cached_combined
         import_rows = self.db.get_import_rows()
         calc_results = self.db.get_calc_results()
 
@@ -536,6 +578,7 @@ class DiscountCalcService:
         for imp in import_rows:
             calc = result_map.get(imp[0])  # imp[0] = id
             combined.append((imp, calc))
+        self._cached_combined = combined
         return combined
 
     def get_summary(self) -> dict:

@@ -97,11 +97,13 @@ class _MatchWorker(QThread):
     error = Signal(str)
     progress = Signal(int, int)  # (total, current)
 
-    def __init__(self, svc, commission_table, exchange_rate=1.0):
+    def __init__(self, svc, commission_table, exchange_rate=1.0, default_commission=None, category_source="feishu"):
         super().__init__()
         self.svc = svc
         self.commission_table = commission_table
         self.exchange_rate = exchange_rate
+        self.default_commission = default_commission
+        self.category_source = category_source
 
     def run(self):
         try:
@@ -110,6 +112,8 @@ class _MatchWorker(QThread):
                 exchange_rate=self.exchange_rate,
                 progress_callback=lambda t, c: self.progress.emit(t, c),
                 should_stop=lambda: self.isInterruptionRequested(),
+                default_commission=self.default_commission,
+                category_source=self.category_source,
             )
             if not self.isInterruptionRequested():
                 self.finished.emit(count)
@@ -160,6 +164,14 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._build_statusbar()
 
+    def _cleanup_worker(self, worker_attr: str):
+        """安全清理旧Worker：调度删除 + 置空引用。
+        deleteLater()会自动断开所有信号连接。"""
+        old = getattr(self, worker_attr, None)
+        if old is not None:
+            old.deleteLater()
+            setattr(self, worker_attr, None)
+
     def closeEvent(self, event):
         """Clean up all workers and force application exit."""
         logger.info("MainWindow closing...")
@@ -190,6 +202,10 @@ class MainWindow(QMainWindow):
             if self._match_worker.isRunning():
                 self._match_worker.terminate()
                 self._match_worker.wait(1000)
+
+        # Cleanup workers
+        for attr in ('_import_worker', '_match_worker', '_calc_worker'):
+            self._cleanup_worker(attr)
 
         # 4. Stop all interface module workers (feishu, commission, exchange_rate)
         try:
@@ -276,11 +292,10 @@ class MainWindow(QMainWindow):
 
         # Page 3: DiscountCalcWidget (佣金表+策略+文件导入+计算+结果+导出)
         self.discount_calc = DiscountCalcWidget()
-        self.discount_calc.set_service(self._discount_svc)
+        self.discount_calc.set_service(self._discount_svc, commission_db=self._commission_db)
         self.discount_calc.calculate_requested.connect(self._on_calculate_requested)
         self.discount_calc.import_requested.connect(self._on_import_requested)
         self.discount_calc.export_requested.connect(self._on_export)
-        self.discount_calc.result_table.doubleClicked.connect(self._on_result_copy_cell)
         self.discount_calc.calc_table.view_clicked.connect(self._on_calc_view_clicked)
         self.discount_calc.import_done.connect(self._on_import_done)
         self.stack.addWidget(self.discount_calc)
@@ -427,6 +442,7 @@ class MainWindow(QMainWindow):
         """Import the selected Excel file in the background."""
         if self._import_worker and self._import_worker.isRunning():
             return
+        self._cleanup_worker('_import_worker')
         self.status_label.setText("正在导入 Excel...")
         self._import_worker = _ImportWorker(self._discount_svc, file_path)
         self._import_worker.finished.connect(self._on_import_finished)
@@ -434,10 +450,12 @@ class MainWindow(QMainWindow):
         self._import_worker.start()
 
     def _on_import_finished(self, file_path: str, count: int):
+        self._import_worker = None
         self.discount_calc.set_import_result(file_path, count)
         self.status_label.setText(f"导入完成: {count} 行")
 
     def _on_import_error(self, err: str):
+        self._import_worker = None
         self.discount_calc.set_import_error(err)
         self.status_label.setText("导入失败")
 
@@ -449,13 +467,18 @@ class MainWindow(QMainWindow):
         exchange_rate = self.discount_calc.get_exchange_rate()
         self.status_label.setText("正在匹配...")
 
-        self._match_worker = _MatchWorker(self._discount_svc, commission_table, exchange_rate)
+        self._cleanup_worker('_match_worker')
+        self._match_worker = _MatchWorker(
+            self._discount_svc, commission_table, exchange_rate,
+            default_commission=self.discount_calc.get_default_commission(),
+            category_source=self.discount_calc.get_commission_category_source())
         self._match_worker.finished.connect(self._on_match_done)
         self._match_worker.error.connect(self._on_match_error)
         self._match_worker.progress.connect(self._on_match_progress)
         self._match_worker.start()
 
     def _on_match_done(self, count):
+        self._match_worker = None
         self.discount_calc.set_match_result(count)
         try:
             combined = self._discount_svc.get_import_data()
@@ -483,6 +506,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"匹配完成: {count} 条")
 
     def _on_match_error(self, err):
+        self._match_worker = None
         self.discount_calc.set_match_result(0)
         self.discount_calc.progress.setVisible(False)
         self.status_label.setText("匹配失败")
@@ -501,7 +525,19 @@ class MainWindow(QMainWindow):
         self.discount_calc.result_table.clear_results()
         self.status_label.setText("正在计算...")
 
+        # Read inline calc_mode and target_profit from widget
+        calc_mode = self.discount_calc.get_calc_mode()
+        target_val = self.discount_calc.get_target_profit_amount()
+        self._params['calc_mode'] = calc_mode
+        if calc_mode == 'fixed_profit':
+            self._params['target_profit_amount'] = target_val
+        else:
+            self._params['target_profit_rate'] = target_val
+        self._params['default_commission'] = self.discount_calc.get_default_commission()
+        self._save_params()
+
         exchange_rate = self.discount_calc.get_exchange_rate()
+        self._cleanup_worker('_calc_worker')
         self._calc_worker = _CalculateWorker(
             self._discount_svc, self._params, exchange_rate)
         self._calc_worker.finished.connect(self._on_calc_done)
@@ -509,6 +545,7 @@ class MainWindow(QMainWindow):
         self._calc_worker.start()
 
     def _on_calc_done(self, count):
+        self._calc_worker = None
         self.discount_calc.set_calc_result(count)
         combined = self._discount_svc.get_import_data()
 
@@ -532,6 +569,7 @@ class MainWindow(QMainWindow):
         )
 
     def _on_calc_error(self, err):
+        self._calc_worker = None
         self.discount_calc.progress.setVisible(False)
         self.discount_calc.btn_calculate.setEnabled(True)
         self.status_label.setText("计算失败")
@@ -580,7 +618,7 @@ class MainWindow(QMainWindow):
                         18=breakeven, 19=profit, 20=max_discount, 21=min_price,
                         22=target_discount, 23=target_price,
                         24=cbase, 25=crisk, 26=r_total, 27=total_fixed,
-                        28=calc_batch)
+                        28=calc_batch, 29=target_new_price)
         """
         results = []
         for imp, calc in combined_data:
@@ -606,6 +644,7 @@ class MainWindow(QMainWindow):
                     "target_discount": None,
                     "min_price": None,
                     "target_price": None,
+                    "target_new_price": None,
                     "row_number": imp[1] or 0,
                     "_calc_result": None,
                 })
@@ -644,6 +683,7 @@ class MainWindow(QMainWindow):
                     "target_discount": calc[22],     # target_discount
                     "min_price": calc[21],           # min_price
                     "target_price": calc[23],        # target_price
+                    "target_new_price": calc[29] if len(calc) > 29 else None,
                     "cbase": calc[24],               # cbase
                     "crisk": calc[25],               # crisk
                     "r_total": calc[26],             # r_total
@@ -660,7 +700,7 @@ class MainWindow(QMainWindow):
         Extracts matching intermediate results: SKU match, commission match,
         inventory status, product cost, distribution price, shipping fee, volume, etc.
 
-        calc_results column layout (29 columns):
+        calc_results column layout (30 columns):
         (0=id, 1=import_row_id, 2=sku_matched, 3=category_matched,
          4=matched_product_id, 5=product_cost, 6=distribution_price,
          7=product_category, 8=dimensions, 9=weight,
@@ -670,7 +710,7 @@ class MainWindow(QMainWindow):
          18=breakeven, 19=profit, 20=max_discount, 21=min_price,
          22=target_discount, 23=target_price,
          24=cbase, 25=crisk, 26=r_total, 27=total_fixed,
-         28=calc_batch)
+         28=calc_batch, 29=target_new_price)
         """
         results = []
         for imp, calc in combined_data:
@@ -741,7 +781,7 @@ class MainWindow(QMainWindow):
 
         Extracts detailed calculation breakdown: prices, fees, breakeven, profit, etc.
 
-        calc_results column layout (29 columns):
+        calc_results column layout (30 columns):
         (0=id, 1=import_row_id, 2=sku_matched, 3=category_matched,
          4=matched_product_id, 5=product_cost, 6=distribution_price,
          7=product_category, 8=dimensions, 9=weight,
@@ -751,7 +791,7 @@ class MainWindow(QMainWindow):
          18=breakeven, 19=profit, 20=max_discount, 21=min_price,
          22=target_discount, 23=target_price,
          24=cbase, 25=crisk, 26=r_total, 27=total_fixed,
-         28=calc_batch)
+         28=calc_batch, 29=target_new_price)
 
         import_rows column layout:
         (0=id, 1=row_number, ..., 10=current_price, 11=new_price,
@@ -774,13 +814,20 @@ class MainWindow(QMainWindow):
                     "total_fixed": None,
                     "breakeven": None,
                     "profit": None,
+                    "current_profit_rate": None,
                     "max_discount": None,
                     "target_discount": None,
                     "min_price": None,
                     "target_price": None,
+                    "target_new_price": None,
                     "_data_index": data_idx,
                 })
             else:
+                # 计算当前利润率: profit / discounted_price * 100
+                _dp = calc[16]  # discounted_price
+                _pf = calc[19]  # profit
+                _profit_rate = round(_pf / _dp * 100, 2) if _dp and _pf is not None and _dp != 0 else None
+
                 results.append({
                     "row_number": imp[1] or 0,
                     "seller_sku": imp[5] or "",
@@ -795,25 +842,17 @@ class MainWindow(QMainWindow):
                     "total_fixed": calc[27],        # total_fixed
                     "breakeven": calc[18],          # breakeven
                     "profit": calc[19],             # profit
+                    "current_profit_rate": _profit_rate,
                     "max_discount": calc[20],       # max_discount
                     "target_discount": calc[22],    # target_discount
                     "min_price": calc[21],          # min_price
                     "target_price": calc[23],       # target_price
+                    "target_new_price": calc[29] if len(calc) > 29 else None,
                     "_data_index": data_idx,
                 })
         return results
 
     # ── Row click detail ──────────────────────
-
-    def _on_result_copy_cell(self, index):
-        """双击结果表格单元格 — 复制内容到剪贴板"""
-        text = index.data()
-        if text and text != "-":
-            QApplication.clipboard().setText(str(text))
-            self.status_label.setText(f"已复制: {text}")
-            # 短暂显示后恢复
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(2000, lambda: self.status_label.setText(self.status_label.text()))
 
     def _on_calc_view_clicked(self, data_idx: int):
         """计算数据表"查看"按钮点击 → 弹出计算详情"""
@@ -850,10 +889,14 @@ class MainWindow(QMainWindow):
             price_updates = {}
             negative_discount_rows = []  # 记录折扣被修正为0的行
 
+            svc = ExcelService()
+            sku_to_row = svc.get_seller_skus(file_path)
+
             for imp, calc in combined:
                 if calc is None:
                     continue
-                row_num = imp[1]  # row_number
+                seller_sku = str(imp[5] or "")
+                row_num = sku_to_row.get(seller_sku)
                 if not row_num:
                     continue
                 profit = calc[19]  # profit
@@ -873,7 +916,25 @@ class MainWindow(QMainWindow):
                     if profit < 0 and min_price is not None:
                         price_updates[row_num] = min_price
 
-            svc = ExcelService()
+                # 保持折扣调价: 负折扣时保留当前折扣，用 target_new_price 写新价
+                if strategy == DiscountCalcWidget.STRATEGY_KEEP_DISCOUNT:
+                    if profit < 0 and target_discount is not None:
+                        if target_discount < 0:
+                            target_new_price = calc[29] if len(calc) > 29 and calc[29] else min_price
+                            price_updates[row_num] = target_new_price
+                        else:
+                            discount_updates[row_num] = target_discount
+
+                # 折扣归零调价: 负折扣时折扣归零，用 target_price 写新价
+                if strategy == DiscountCalcWidget.STRATEGY_ZERO_DISCOUNT:
+                    if profit < 0 and target_discount is not None:
+                        if target_discount < 0:
+                            discount_updates[row_num] = 0
+                            target_price = calc[23] if calc[23] else min_price
+                            price_updates[row_num] = target_price
+                        else:
+                            discount_updates[row_num] = target_discount
+
             svc.write_updates(file_path, save_path, discount_updates, price_updates)
             self.status_label.setText(f"已导出: {save_path}")
 

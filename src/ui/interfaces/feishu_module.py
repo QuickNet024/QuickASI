@@ -170,6 +170,12 @@ class _FeishuWidget(QWidget):
         self.progress.setVisible(False)
         layout.addWidget(self.progress)
 
+    def _cleanup_worker(self, worker_attr: str = '_worker'):
+        old = getattr(self, worker_attr, None)
+        if old is not None:
+            old.deleteLater()
+            setattr(self, worker_attr, None)
+
     def _on_sync(self):
         # 如果正在同步 → 取消
         if self._worker and self._worker.isRunning():
@@ -191,6 +197,7 @@ class _FeishuWidget(QWidget):
         self.progress.setRange(0, 0)
         if self._signals:
             self._signals.sync_started.emit()
+        self._cleanup_worker()
         self._worker = FeishuSyncWorker(self.db, sync_images)
         self._worker.finished.connect(self._on_done)
         self._worker.error.connect(self._on_error)
@@ -205,6 +212,7 @@ class _FeishuWidget(QWidget):
         self.progress.setVisible(False)
 
     def _on_done(self, count, sheets):
+        self._worker = None
         self._reset_sync_button()
         self._refresh_status()
         if self._signals:
@@ -226,6 +234,7 @@ class _FeishuWidget(QWidget):
                 "建议：稍后重试，或检查API设置。")
 
     def _on_error(self, err):
+        self._worker = None
         self._reset_sync_button()
         self.lbl_count.setText("同步失败")
         self.lbl_sync_time.setText("上次同步: 失败")
@@ -233,6 +242,7 @@ class _FeishuWidget(QWidget):
 
     def _on_cancel(self):
         """用户手动取消同步"""
+        self._cleanup_worker()
         self._reset_sync_button()
         self.lbl_count.setText("已取消")
         if self._signals:
@@ -277,6 +287,7 @@ class _FeishuWidget(QWidget):
             if self._worker.isRunning():
                 self._worker.terminate()
                 self._worker.wait(1000)
+        self._cleanup_worker()
 
 
 # 自动注册

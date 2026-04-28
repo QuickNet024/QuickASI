@@ -49,7 +49,7 @@ def _mock_batch_response(value_ranges):
 
 
 class TestGetTenantToken:
-    @patch("src.services.feishu_service.requests.post")
+    @patch("requests.Session.post")
     def test_success(self, mock_post, svc):
         mock_resp = MagicMock()
         mock_resp.json.return_value = _mock_token_response()
@@ -58,7 +58,7 @@ class TestGetTenantToken:
         token = svc.get_tenant_token()
         assert token == "test_token"
 
-    @patch("src.services.feishu_service.requests.post")
+    @patch("requests.Session.post")
     def test_auth_failure(self, mock_post, svc):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"code": 99999, "msg": "invalid app_id"}
@@ -69,8 +69,8 @@ class TestGetTenantToken:
 
 
 class TestGetAllSheets:
-    @patch("src.services.feishu_service.requests.get")
-    @patch("src.services.feishu_service.requests.post")
+    @patch("requests.Session.get")
+    @patch("requests.Session.post")
     def test_returns_sheets(self, mock_post, mock_get, svc):
         mock_post_resp = MagicMock()
         mock_post_resp.json.return_value = _mock_token_response()
@@ -90,7 +90,7 @@ class TestGetAllSheets:
 
 
 class TestGetSheetData:
-    @patch("src.services.feishu_service.requests.get")
+    @patch("requests.Session.get")
     def test_returns_values(self, mock_get, svc):
         svc._token = "test_token"
         mock_resp = MagicMock()
@@ -106,8 +106,8 @@ class TestGetSheetData:
 
 
 class TestSyncAllProducts:
-    @patch("src.services.feishu_service.requests.get")
-    @patch("src.services.feishu_service.requests.post")
+    @patch("requests.Session.get")
+    @patch("requests.Session.post")
     def test_sync_excludes_sheets(self, mock_post, mock_get, svc, db):
         mock_post_resp = MagicMock()
         mock_post_resp.json.return_value = _mock_token_response()
@@ -129,8 +129,8 @@ class TestSyncAllProducts:
         assert count == 1
         assert "货盘公告" not in sheets
 
-    @patch("src.services.feishu_service.requests.get")
-    @patch("src.services.feishu_service.requests.post")
+    @patch("requests.Session.get")
+    @patch("requests.Session.post")
     def test_sync_stores_products(self, mock_post, mock_get, svc, db):
         mock_post_resp = MagicMock()
         mock_post_resp.json.return_value = _mock_token_response()
@@ -156,8 +156,8 @@ class TestSyncAllProducts:
         assert p is not None
         assert p.distribution_price == 100.0
 
-    @patch("src.services.feishu_service.requests.get")
-    @patch("src.services.feishu_service.requests.post")
+    @patch("requests.Session.get")
+    @patch("requests.Session.post")
     def test_sync_empty_sheet_skipped(self, mock_post, mock_get, svc, db):
         mock_post_resp = MagicMock()
         mock_post_resp.json.return_value = _mock_token_response()
@@ -179,8 +179,8 @@ class TestSyncAllProducts:
         assert count == 0
         assert sheets == []
 
-    @patch("src.services.feishu_service.requests.get")
-    @patch("src.services.feishu_service.requests.post")
+    @patch("requests.Session.get")
+    @patch("requests.Session.post")
     def test_sync_multiple_sheets(self, mock_post, mock_get, svc, db):
         mock_post_resp = MagicMock()
         mock_post_resp.json.return_value = _mock_token_response()

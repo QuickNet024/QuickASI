@@ -524,6 +524,12 @@ class FeishuAdvancedDialog(QDialog):
         checked = sum(1 for cb in self._sheet_checks.values() if cb.isChecked())
         self._lbl_sheet_count.setText(f"已选 {checked}/{total} 个")
 
+    def _cleanup_worker(self, worker_attr: str = '_worker'):
+        old = getattr(self, worker_attr, None)
+        if old is not None:
+            old.deleteLater()
+            setattr(self, worker_attr, None)
+
     # ═══ 读取飞书结构 ═══════════════════════════
 
     def _on_fetch(self):
@@ -531,12 +537,14 @@ class FeishuAdvancedDialog(QDialog):
             return
         self.btn_fetch.setEnabled(False)
         self.btn_fetch.setText("刷新中...")
+        self._cleanup_worker()
         self._worker = FetchMetaWorker(self.db)
         self._worker.finished.connect(self._on_fetch_done)
         self._worker.error.connect(self._on_fetch_error)
         self._worker.start()
 
     def _on_fetch_done(self, sheet_headers: dict):
+        self._worker = None
         self.btn_fetch.setEnabled(True)
         self.btn_fetch.setText(" 刷新结构")
         self._sheet_headers = sheet_headers
@@ -575,6 +583,7 @@ class FeishuAdvancedDialog(QDialog):
             self._populate_col_table(sheet_headers[first_sheet], col_mapping)
 
     def _on_fetch_error(self, err):
+        self._worker = None
         self.btn_fetch.setEnabled(True)
         self.btn_fetch.setText(" 刷新结构")
         self.lbl_status.setText("刷新失败")

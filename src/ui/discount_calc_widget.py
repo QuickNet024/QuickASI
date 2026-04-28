@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal
 
 from src.config import Config
-from src.models.database import DatabaseManager
 from src.services.discount_calc_svc import DiscountCalcService
 from src.services.shipping_service import ShippingService
 from src.ui.result_table import ResultTable
@@ -36,6 +35,8 @@ class DiscountCalcWidget(QWidget):
     STRATEGY_DISCOUNT_ONLY = "discount_only"
     STRATEGY_PRICE_ONLY = "price_only"
     STRATEGY_BOTH = "both"
+    STRATEGY_KEEP_DISCOUNT = "keep_discount"
+    STRATEGY_ZERO_DISCOUNT = "zero_discount"
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -48,97 +49,112 @@ class DiscountCalcWidget(QWidget):
         self._last_shop_type = "wb_cross_border"
         self._last_currency = "CNY"
         self._is_matched = False
+        self._pending_auto_calculate = False
         self._match_count = 0
-        self._db = DatabaseManager(Config.DB_DISCOUNT_CALC_PATH,
-                                   init_tables=["import_rows", "calc_results", "app_config"])
-        self._svc = DiscountCalcService(db=self._db)
+        self._svc = None  # Injected via set_service() from MainWindow
+        self._commission_db = None  # Injected via set_service() from MainWindow
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        layout.setSpacing(8)
 
-        summary_row = QHBoxLayout()
-        summary_row.setSpacing(12)
+        self._step_status_labels = {}
+        self._calc_mode = "profit_rate"
 
-        self.card_imported = self._create_stat_card("导入数据", "未导入", "请先选择待测算的 Excel 文件")
-        self.card_match = self._create_stat_card("匹配状态", "等待开始", "步骤1 将补齐 SKU、佣金和运费")
-        self.card_currency = self._create_stat_card("计算币种", "CNY", "根据佣金表与汇率设置自动决定")
-        self.card_strategy = self._create_stat_card("输出策略", "折扣优先", "步骤2 完成后可导出建议价格/折扣")
+        # ── Step 1 — 导入数据 ──
+        step1 = QFrame()
+        step1.setObjectName("stepBlock")
+        s1_layout = QVBoxLayout(step1)
+        s1_layout.setContentsMargins(10, 8, 10, 8)
+        s1_layout.setSpacing(4)
 
-        summary_row.addWidget(self.card_imported["frame"])
-        summary_row.addWidget(self.card_match["frame"])
-        summary_row.addWidget(self.card_currency["frame"])
-        summary_row.addWidget(self.card_strategy["frame"])
-        layout.addLayout(summary_row)
+        s1_title_row = QHBoxLayout()
+        s1_title_row.setSpacing(10)
+        s1_title = QLabel("步骤 1  ·  导入数据")
+        s1_title.setObjectName("stepTitle")
+        s1_title_row.addWidget(s1_title)
+        s1_status = QLabel("待执行")
+        s1_status.setObjectName("stepStatus")
+        s1_title_row.addWidget(s1_status)
+        s1_title_row.addStretch()
+        self._step_status_labels[1] = s1_status
+        s1_layout.addLayout(s1_title_row)
 
-        # ── 操作栏 ──
-        op_card = QGroupBox("测算工作区")
-        op_card.setObjectName("workflowCard")
-        op_layout = QVBoxLayout(op_card)
-        op_layout.setSpacing(10)
-
-        workflow_header = QHBoxLayout()
-        workflow_header.setSpacing(12)
-
-        self.lbl_workflow_title = QLabel("折扣测算流程")
-        self.lbl_workflow_title.setObjectName("workflowTitle")
-        workflow_header.addWidget(self.lbl_workflow_title)
-
-        self.lbl_workflow_hint = QLabel("先导入文件，再完成匹配和盈亏计算，最后导出建议结果。")
-        self.lbl_workflow_hint.setObjectName("workflowHint")
-        workflow_header.addWidget(self.lbl_workflow_hint, stretch=1)
-        op_layout.addLayout(workflow_header)
-
-        self.workflow_badges = QLabel("步骤 1 导入模板   /   步骤 2 匹配基础数据   /   步骤 3 计算结果   /   步骤 4 导出建议")
-        self.workflow_badges.setObjectName("workflowBadges")
-        op_layout.addWidget(self.workflow_badges)
-
-        source_row = QHBoxLayout()
-        source_row.setSpacing(10)
+        s1_controls = QHBoxLayout()
+        s1_controls.setSpacing(10)
         self.btn_select = QPushButton("导入 Excel 模板")
         self.btn_select.setProperty("class", "btn-primary")
-        self.btn_select.setFixedHeight(36)
+        self.btn_select.setFixedHeight(32)
         self.btn_select.clicked.connect(self._on_select_file)
-        source_row.addWidget(self.btn_select)
+        s1_controls.addWidget(self.btn_select)
 
         self.lbl_file = QLabel("未导入数据")
         self.lbl_file.setObjectName("fileSummary")
-        source_row.addWidget(self.lbl_file, stretch=1)
+        s1_controls.addWidget(self.lbl_file, stretch=1)
 
         self.lbl_currency = QLabel("")
         self.lbl_currency.setProperty("class", "stat-label")
-        source_row.addWidget(self.lbl_currency)
-        op_layout.addLayout(source_row)
+        s1_controls.addWidget(self.lbl_currency)
+        s1_layout.addLayout(s1_controls)
 
-        control_frame = QFrame()
-        control_frame.setObjectName("calcControlGrid")
-        control_grid = QGridLayout(control_frame)
-        control_grid.setContentsMargins(14, 12, 14, 12)
-        control_grid.setHorizontalSpacing(18)
-        control_grid.setVerticalSpacing(10)
+        layout.addWidget(step1)
 
+        # ── Step 2 — 匹配基础数据 ──
+        step2 = QFrame()
+        step2.setObjectName("stepBlock")
+        s2_layout = QVBoxLayout(step2)
+        s2_layout.setContentsMargins(10, 8, 10, 8)
+        s2_layout.setSpacing(4)
+
+        s2_title_row = QHBoxLayout()
+        s2_title_row.setSpacing(10)
+        s2_title = QLabel("步骤 2  ·  匹配基础数据")
+        s2_title.setObjectName("stepTitle")
+        s2_title_row.addWidget(s2_title)
+        s2_status = QLabel("待执行")
+        s2_status.setObjectName("stepStatus")
+        s2_title_row.addWidget(s2_status)
+        s2_title_row.addStretch()
+        self._step_status_labels[2] = s2_status
+        s2_layout.addLayout(s2_title_row)
+
+        s2_controls = QHBoxLayout()
+        s2_controls.setSpacing(10)
         self.combo_shop_type = QComboBox()
         self.combo_shop_type.currentIndexChanged.connect(self._on_shop_type_changed)
-        control_grid.addWidget(self._make_field_label("店铺模式"), 0, 0)
-        control_grid.addWidget(self.combo_shop_type, 1, 0)
+        s2_controls.addWidget(self._make_field_label("店铺"))
+        s2_controls.addWidget(self.combo_shop_type)
 
         self.combo_commission = QComboBox()
         self.combo_commission.currentIndexChanged.connect(self._on_commission_changed)
-        control_grid.addWidget(self._make_field_label("佣金表"), 0, 1)
-        control_grid.addWidget(self.combo_commission, 1, 1)
+        s2_controls.addWidget(self._make_field_label("佣金表"))
+        s2_controls.addWidget(self.combo_commission)
 
-        self.combo_strategy = QComboBox()
-        self.combo_strategy.addItem("折扣优先", self.STRATEGY_DISCOUNT_ONLY)
-        self.combo_strategy.addItem("价格优先", self.STRATEGY_PRICE_ONLY)
-        self.combo_strategy.addItem("价格 + 折扣", self.STRATEGY_BOTH)
-        self.combo_strategy.currentIndexChanged.connect(self._on_strategy_changed)
-        control_grid.addWidget(self._make_field_label("输出策略"), 0, 2)
-        control_grid.addWidget(self.combo_strategy, 1, 2)
+        self.spin_default_commission = QDoubleSpinBox()
+        self.spin_default_commission.setRange(0.0, 100.0)
+        self.spin_default_commission.setDecimals(1)
+        self.spin_default_commission.setValue(30.0)
+        self.spin_default_commission.setSuffix(" %")
+        self.spin_default_commission.setFixedWidth(90)
+        self.spin_default_commission.setToolTip("未匹配到类目时使用的默认佣金率")
+        s2_controls.addWidget(self._make_field_label("默认佣金率"))
+        s2_controls.addWidget(self.spin_default_commission)
 
-        rate_box = QHBoxLayout()
-        rate_box.setSpacing(8)
+        self._commission_category_source = QComboBox()
+        self._commission_category_source.addItems(["飞书产品类目", "Excel表格类目"])
+        self._commission_category_source.setToolTip(
+            "选择匹配佣金率时使用哪个类目来源：\n"
+            "• 飞书产品类目：使用SKU匹配到的飞书产品的类目\n"
+            "• Excel表格类目：使用导入Excel B列(类目)的值"
+        )
+        self._commission_category_source.currentIndexChanged.connect(
+            lambda: self._save_category_source()
+        )
+        s2_controls.addWidget(self._make_field_label("佣金类目来源"))
+        s2_controls.addWidget(self._commission_category_source)
+
         self.rb_rate_realtime = QRadioButton("实时汇率")
         self.rb_rate_specified = QRadioButton("手动")
         grp_rate = QButtonGroup(self)
@@ -150,72 +166,159 @@ class DiscountCalcWidget(QWidget):
         self.spin_rate.setRange(0.01, 100.0)
         self.spin_rate.setDecimals(4)
         self.spin_rate.setValue(12.0)
-        self.spin_rate.setFixedWidth(110)
+        self.spin_rate.setFixedWidth(100)
         self.spin_rate.setEnabled(False)
         self.rb_rate_specified.toggled.connect(self.spin_rate.setEnabled)
         self.rb_rate_realtime.toggled.connect(lambda _: self._refresh_dashboard())
         self.rb_rate_specified.toggled.connect(lambda _: self._refresh_dashboard())
         self.spin_rate.valueChanged.connect(lambda _: self._refresh_dashboard())
 
-        rate_box.addWidget(self.rb_rate_realtime)
-        rate_box.addWidget(self.rb_rate_specified)
-        rate_box.addWidget(self.spin_rate)
-        rate_box.addStretch()
-        control_grid.addWidget(self._make_field_label("汇率设置"), 0, 3)
-        control_grid.addLayout(rate_box, 1, 3)
-
-        op_layout.addWidget(control_frame)
-
-        action_row = QHBoxLayout()
-        action_row.setSpacing(12)
+        s2_controls.addWidget(self.rb_rate_realtime)
+        s2_controls.addWidget(self.rb_rate_specified)
+        s2_controls.addWidget(self.spin_rate)
 
         self.btn_match = QPushButton("执行匹配")
         self.btn_match.setProperty("class", "btn-primary")
-        self.btn_match.setFixedHeight(36)
+        self.btn_match.setFixedHeight(32)
         self.btn_match.setToolTip("匹配SKU + 佣金 + 计算运费")
         self.btn_match.clicked.connect(self._on_match)
-        action_row.addWidget(self.btn_match)
+        s2_controls.addWidget(self.btn_match)
+        s2_controls.addStretch()
+        s2_layout.addLayout(s2_controls)
+
+        layout.addWidget(step2)
+
+        # ── Step 3 — 计算盈亏 ──
+        step3 = QFrame()
+        step3.setObjectName("stepBlock")
+        s3_layout = QVBoxLayout(step3)
+        s3_layout.setContentsMargins(10, 8, 10, 8)
+        s3_layout.setSpacing(4)
+
+        s3_title_row = QHBoxLayout()
+        s3_title_row.setSpacing(10)
+        s3_title = QLabel("步骤 3  ·  计算盈亏")
+        s3_title.setObjectName("stepTitle")
+        s3_title_row.addWidget(s3_title)
+        s3_status = QLabel("待执行")
+        s3_status.setObjectName("stepStatus")
+        s3_title_row.addWidget(s3_status)
+        s3_title_row.addStretch()
+        self._step_status_labels[3] = s3_status
+        s3_layout.addLayout(s3_title_row)
+
+        s3_controls = QHBoxLayout()
+        s3_controls.setSpacing(10)
+
+        self.rb_profit_rate = QRadioButton("按利润率")
+        self.rb_fixed_profit = QRadioButton("按固定利润")
+        self.btn_group_calc_mode = QButtonGroup(self)
+        self.btn_group_calc_mode.addButton(self.rb_profit_rate)
+        self.btn_group_calc_mode.addButton(self.rb_fixed_profit)
+        self.rb_profit_rate.setChecked(True)
+        self.rb_profit_rate.toggled.connect(self._on_calc_mode_changed)
+
+        self.spin_target_profit = QDoubleSpinBox()
+        self.spin_target_profit.setRange(0, 100)
+        self.spin_target_profit.setDecimals(1)
+        self.spin_target_profit.setSuffix(" %")
+        self.spin_target_profit.setValue(10.0)
+        self.spin_target_profit.setFixedWidth(100)
+
+        s3_controls.addWidget(self.rb_profit_rate)
+        s3_controls.addWidget(self.rb_fixed_profit)
+        s3_controls.addWidget(self.spin_target_profit)
 
         self.btn_calculate = QPushButton("计算盈亏")
         self.btn_calculate.setProperty("class", "btn-primary")
-        self.btn_calculate.setFixedHeight(36)
-        self.btn_calculate.setEnabled(False)  # Disabled until match is done
+        self.btn_calculate.setFixedHeight(32)
+        self.btn_calculate.setEnabled(False)
         self.btn_calculate.setToolTip("计算盈亏、折扣推算")
         self.btn_calculate.clicked.connect(self._on_calculate)
-        action_row.addWidget(self.btn_calculate)
-
-        self.btn_export = QPushButton("导出建议")
-        self.btn_export.setProperty("class", "btn-success")
-        self.btn_export.setFixedHeight(36)
-        self.btn_export.setMinimumWidth(140)
-        self.btn_export.setEnabled(False)
-        self.btn_export.clicked.connect(lambda: self.export_requested.emit())
-        action_row.addWidget(self.btn_export)
+        s3_controls.addWidget(self.btn_calculate)
 
         self.btn_run_all = QPushButton("一键测算")
         self.btn_run_all.setProperty("class", "btn-outline")
-        self.btn_run_all.setFixedHeight(36)
+        self.btn_run_all.setFixedHeight(32)
         self.btn_run_all.clicked.connect(self._on_run_all)
-        action_row.addWidget(self.btn_run_all)
+        s3_controls.addWidget(self.btn_run_all)
 
-        self.lbl_match_status = QLabel("未匹配")
+        self.lbl_match_status = QLabel("")
         self.lbl_match_status.setProperty("class", "stat-label")
-        action_row.addWidget(self.lbl_match_status)
+        s3_controls.addWidget(self.lbl_match_status)
+        s3_controls.addStretch()
+        s3_layout.addLayout(s3_controls)
+
+        layout.addWidget(step3)
+
+        # ── Step 4 — 导出建议 ──
+        step4 = QFrame()
+        step4.setObjectName("stepBlock")
+        s4_layout = QVBoxLayout(step4)
+        s4_layout.setContentsMargins(10, 8, 10, 8)
+        s4_layout.setSpacing(4)
+
+        s4_title_row = QHBoxLayout()
+        s4_title_row.setSpacing(10)
+        s4_title = QLabel("步骤 4  ·  导出建议")
+        s4_title.setObjectName("stepTitle")
+        s4_title_row.addWidget(s4_title)
+        s4_status = QLabel("待执行")
+        s4_status.setObjectName("stepStatus")
+        s4_title_row.addWidget(s4_status)
+        s4_title_row.addStretch()
+        self._step_status_labels[4] = s4_status
+        s4_layout.addLayout(s4_title_row)
+
+        s4_controls = QHBoxLayout()
+        s4_controls.setSpacing(10)
+
+        self.combo_strategy = QComboBox()
+        self.combo_strategy.addItem("折扣优先", self.STRATEGY_DISCOUNT_ONLY)
+        self.combo_strategy.addItem("价格优先", self.STRATEGY_PRICE_ONLY)
+        self.combo_strategy.addItem("价格 + 折扣", self.STRATEGY_BOTH)
+        self.combo_strategy.addItem("保持折扣调价", self.STRATEGY_KEEP_DISCOUNT)
+        self.combo_strategy.addItem("折扣归零调价", self.STRATEGY_ZERO_DISCOUNT)
+        self.combo_strategy.currentIndexChanged.connect(self._on_strategy_changed)
+        s4_controls.addWidget(self._make_field_label("输出策略"))
+        s4_controls.addWidget(self.combo_strategy)
+
+        self.btn_export = QPushButton("导出建议")
+        self.btn_export.setProperty("class", "btn-success")
+        self.btn_export.setFixedHeight(32)
+        self.btn_export.setMinimumWidth(100)
+        self.btn_export.setEnabled(False)
+        self.btn_export.clicked.connect(lambda: self.export_requested.emit())
+        s4_controls.addWidget(self.btn_export)
+
+        self.btn_export_unmatched_sku = QPushButton("导出未匹配SKU")
+        self.btn_export_unmatched_sku.setProperty("class", "btn-outline")
+        self.btn_export_unmatched_sku.setMinimumWidth(110)
+        self.btn_export_unmatched_sku.setToolTip("导出SKU未匹配到的商品到Excel")
+        self.btn_export_unmatched_sku.clicked.connect(self._on_export_unmatched_sku)
+        s4_controls.addWidget(self.btn_export_unmatched_sku)
+
+        self.btn_export_unmatched_category = QPushButton("导出未匹配类目")
+        self.btn_export_unmatched_category.setProperty("class", "btn-outline")
+        self.btn_export_unmatched_category.setMinimumWidth(110)
+        self.btn_export_unmatched_category.setToolTip("导出类目未匹配到的商品到Excel")
+        self.btn_export_unmatched_category.clicked.connect(self._on_export_unmatched_category)
+        s4_controls.addWidget(self.btn_export_unmatched_category)
 
         self.lbl_summary = QLabel("")
         self.lbl_summary.setProperty("class", "stat-label")
-        action_row.addWidget(self.lbl_summary)
-        action_row.addStretch()
-        op_layout.addLayout(action_row)
+        s4_controls.addWidget(self.lbl_summary)
+        s4_controls.addStretch()
+        s4_layout.addLayout(s4_controls)
+
+        layout.addWidget(step4)
 
         # 进度条
         self.progress = QProgressBar()
         self.progress.setMaximumHeight(4)
         self.progress.setTextVisible(False)
         self.progress.setVisible(False)
-        op_layout.addWidget(self.progress)
-
-        layout.addWidget(op_card)
+        layout.addWidget(self.progress)
 
         # ── 筛选栏 ──
         filter_wrap = QFrame()
@@ -248,6 +351,10 @@ class DiscountCalcWidget(QWidget):
         self.chk_unmatched.setObjectName("filterCheck")
         filter_row.addWidget(self.chk_unmatched)
 
+        self.chk_unmatched_category = QCheckBox("仅显示未匹配类目")
+        self.chk_unmatched_category.setObjectName("filterCheck")
+        filter_row.addWidget(self.chk_unmatched_category)
+
         self.btn_apply_filter = QPushButton("确定筛选")
         self.btn_apply_filter.setProperty("class", "btn-primary")
         self.btn_apply_filter.setMinimumWidth(72)
@@ -259,20 +366,6 @@ class DiscountCalcWidget(QWidget):
         filter_row.addWidget(self.btn_clear_filter)
 
         filter_row.addSpacing(12)
-
-        self.btn_export_unmatched_sku = QPushButton("导出未匹配SKU")
-        self.btn_export_unmatched_sku.setProperty("class", "btn-outline")
-        self.btn_export_unmatched_sku.setMinimumWidth(110)
-        self.btn_export_unmatched_sku.setToolTip("导出SKU未匹配到的商品到Excel")
-        self.btn_export_unmatched_sku.clicked.connect(self._on_export_unmatched_sku)
-        filter_row.addWidget(self.btn_export_unmatched_sku)
-
-        self.btn_export_unmatched_category = QPushButton("导出未匹配类目")
-        self.btn_export_unmatched_category.setProperty("class", "btn-outline")
-        self.btn_export_unmatched_category.setMinimumWidth(110)
-        self.btn_export_unmatched_category.setToolTip("导出类目未匹配到的商品到Excel")
-        self.btn_export_unmatched_category.clicked.connect(self._on_export_unmatched_category)
-        filter_row.addWidget(self.btn_export_unmatched_category)
 
         self.lbl_filter_count = QLabel("")
         self.lbl_filter_count.setProperty("class", "stat-label")
@@ -320,33 +413,6 @@ class DiscountCalcWidget(QWidget):
         self._sync_controls_from_state()
         self._refresh_dashboard()
 
-    def _create_stat_card(self, title: str, value: str, hint: str) -> dict:
-        frame = QFrame()
-        frame.setObjectName("summaryCard")
-        card_layout = QVBoxLayout(frame)
-        card_layout.setContentsMargins(14, 12, 14, 12)
-        card_layout.setSpacing(4)
-
-        title_label = QLabel(title)
-        title_label.setObjectName("summaryCardTitle")
-        card_layout.addWidget(title_label)
-
-        value_label = QLabel(value)
-        value_label.setObjectName("summaryCardValue")
-        card_layout.addWidget(value_label)
-
-        hint_label = QLabel(hint)
-        hint_label.setWordWrap(True)
-        hint_label.setObjectName("summaryCardHint")
-        card_layout.addWidget(hint_label)
-
-        return {
-            "frame": frame,
-            "title": title_label,
-            "value": value_label,
-            "hint": hint_label,
-        }
-
     def _make_field_label(self, text: str) -> QLabel:
         label = QLabel(text)
         label.setObjectName("fieldLabel")
@@ -368,11 +434,10 @@ class DiscountCalcWidget(QWidget):
     def _load_commission_options(self):
         self.combo_commission.blockSignals(True)
         self.combo_commission.clear()
-        comm_db = DatabaseManager(
-            Config.DB_COMMISSION_PATH,
-            init_tables=["commissions", "commission_meta", "app_config"],
-        )
-        tables = comm_db.get_commission_tables()
+        if self._commission_db is not None:
+            tables = self._commission_db.get_commission_tables()
+        else:
+            tables = []
         for t in tables:
             shop_label = "本土" if t.shop_type == "local" else "跨境"
             label = f"{t.platform.upper()} {shop_label} · {t.row_count:,} 条"
@@ -428,38 +493,33 @@ class DiscountCalcWidget(QWidget):
         self.lbl_currency.setText(f"计算币种: {self._last_currency}")
 
     def _refresh_dashboard(self):
-        imported_rows = self._svc.db.get_import_row_count() if self._file_path else 0
-        imported_text = "未导入" if not self._file_path else f"{imported_rows} 行"
-        self.card_imported["value"].setText(imported_text)
-        self.card_imported["hint"].setText(
-            "请先选择待测算的 Excel 文件" if not self._file_path else os.path.basename(self._file_path)
-        )
-
-        if not self._file_path:
-            self.card_match["value"].setText("等待开始")
-            self.card_match["hint"].setText("步骤1 将补齐 SKU、佣金和运费")
-        elif not self._is_matched:
-            self.card_match["value"].setText("待匹配")
-            self.card_match["hint"].setText("请执行步骤1，先补全基础数据")
-        elif self.has_calc_done():
-            self.card_match["value"].setText(f"已计算 {self._match_count} 条")
-            self.card_match["hint"].setText("可以筛选结果并导出建议折扣/价格")
+        # Step 1: 导入数据
+        if self._file_path:
+            self._update_step_status(1, "done")
         else:
-            self.card_match["value"].setText(f"已匹配 {self._match_count} 条")
-            self.card_match["hint"].setText("基础数据已齐备，可以继续做盈亏测算")
+            self._update_step_status(1, "pending")
 
-        self.card_currency["value"].setText(self.get_currency())
-        rate_label = "实时汇率" if self.rb_rate_realtime.isChecked() else f"指定汇率 {self.spin_rate.value():.4f}"
-        self.card_currency["hint"].setText(rate_label)
+        # Step 2: 匹配基础数据
+        if not self._file_path:
+            self._update_step_status(2, "pending")
+        elif not self._is_matched:
+            self._update_step_status(2, "active")
+        else:
+            self._update_step_status(2, "done")
 
-        strategy_map = {
-            self.STRATEGY_DISCOUNT_ONLY: "折扣优先",
-            self.STRATEGY_PRICE_ONLY: "价格优先",
-            self.STRATEGY_BOTH: "价格 + 折扣",
-        }
-        current_strategy = self.combo_strategy.currentData() or self._last_strategy
-        self.card_strategy["value"].setText(strategy_map.get(current_strategy, "折扣优先"))
-        self.card_strategy["hint"].setText("导出时会按当前策略回写模板建议")
+        # Step 3: 计算盈亏
+        if not self._is_matched:
+            self._update_step_status(3, "pending")
+        elif self.has_calc_done():
+            self._update_step_status(3, "done")
+        else:
+            self._update_step_status(3, "active")
+
+        # Step 4: 导出建议
+        if self.has_calc_done():
+            self._update_step_status(4, "active")
+        else:
+            self._update_step_status(4, "pending")
 
     def _on_select_file(self):
         """选择 Excel 文件并交给后台线程导入。"""
@@ -484,7 +544,7 @@ class DiscountCalcWidget(QWidget):
         self.btn_run_all.setEnabled(False)
         self.lbl_file.setText(f"{os.path.basename(file_path)} · 正在导入...")
         self.lbl_match_status.setText("导入中...")
-        self.lbl_workflow_hint.setText("正在执行步骤0：读取 Excel 模板并写入系统数据。")
+        self._update_step_status(1, "active")
         self.progress.setVisible(True)
         self.progress.setRange(0, 0)
         self.progress.setValue(0)
@@ -494,7 +554,11 @@ class DiscountCalcWidget(QWidget):
         """Called by MainWindow after async import completes."""
         self._file_path = file_path
         self._pending_file_path = None
-        self.lbl_file.setText(f"{os.path.basename(file_path)} · {count} 行已导入")
+        # 从数据库查询实际导入行数（比依赖worker返回值更可靠）
+        actual_count = self._svc.db.get_import_row_count()
+        if actual_count <= 0:
+            actual_count = count
+        self.lbl_file.setText(f"{os.path.basename(file_path)} · {actual_count} 行已导入")
         self._is_matched = False
         self._match_count = 0
         self._calc_done = False
@@ -523,7 +587,7 @@ class DiscountCalcWidget(QWidget):
         self.progress.setVisible(False)
         self.lbl_file.setText("未导入数据")
         self.lbl_match_status.setText("")
-        self.lbl_workflow_hint.setText("导入失败，请检查 Excel 模板结构后重试。")
+        self._update_step_status(1, "pending")
         self._refresh_dashboard()
         QMessageBox.warning(self, "导入失败", f"无法导入Excel文件:\n{err}")
 
@@ -539,7 +603,7 @@ class DiscountCalcWidget(QWidget):
         self.btn_match.setEnabled(False)
         self.btn_calculate.setEnabled(False)
         self.lbl_match_status.setText("匹配中...")
-        self.lbl_workflow_hint.setText("正在执行步骤1：匹配 SKU、佣金和运费，请稍候。")
+        self._update_step_status(2, "active")
         self.progress.setVisible(True)
         self.progress.setRange(0, 1)  # Will be updated by progress signal
         self.progress.setValue(0)
@@ -556,7 +620,7 @@ class DiscountCalcWidget(QWidget):
         self._last_strategy = self.combo_strategy.currentData() or self.STRATEGY_DISCOUNT_ONLY
         self.btn_calculate.setEnabled(False)
         self.progress.setVisible(True)
-        self.lbl_workflow_hint.setText("正在执行步骤2：根据当前参数计算盈亏、保本价与目标折扣。")
+        self._update_step_status(3, "active")
         self._refresh_dashboard()
 
         self.calculate_requested.emit()
@@ -569,13 +633,22 @@ class DiscountCalcWidget(QWidget):
         if self._is_matched:
             self._on_calculate()
         else:
+            self._pending_auto_calculate = True
             self._on_match()
 
     # ── External interface ──
 
-    def set_service(self, svc: DiscountCalcService):
+    def set_service(self, svc: DiscountCalcService, commission_db=None):
         """Set service with all DB connections"""
         self._svc = svc
+        self._commission_db = commission_db
+        # Restore saved category source
+        if self._svc and hasattr(self._svc, 'db'):
+            saved = self._svc.db.get_config('commission_category_source')
+            if saved:
+                self._commission_category_source.blockSignals(True)
+                self.set_commission_category_source(saved)
+                self._commission_category_source.blockSignals(False)
 
     def get_file_path(self):
         return self._file_path
@@ -593,9 +666,6 @@ class DiscountCalcWidget(QWidget):
         self.lbl_summary.setText(
             f"盈利: {summary.get('profit', 0)}  |  亏损: {summary.get('loss', 0)}  |  "
             f"未匹配: {summary.get('unmatched', 0)}  |  总计: {summary.get('total', 0)}"
-        )
-        self.card_strategy["hint"].setText(
-            f"盈利 {summary.get('profit', 0)} / 亏损 {summary.get('loss', 0)} / 未匹配 {summary.get('unmatched', 0)}"
         )
         self._refresh_dashboard()
 
@@ -632,6 +702,24 @@ class DiscountCalcWidget(QWidget):
             data_rows.append(extracted)
         self.raw_table.populate(data_rows)
 
+    def get_default_commission(self) -> float:
+        """获取用户设置的未匹配类目默认佣金率"""
+        return self.spin_default_commission.value()
+
+    def get_commission_category_source(self) -> str:
+        """返回佣金类目来源: 'feishu' 或 'excel'"""
+        return 'excel' if self._commission_category_source.currentIndex() == 1 else 'feishu'
+
+    def set_commission_category_source(self, source: str):
+        """设置佣金类目来源"""
+        self._commission_category_source.setCurrentIndex(1 if source == 'excel' else 0)
+
+    def _save_category_source(self):
+        """持久化佣金类目来源到app_config"""
+        if self._svc and hasattr(self._svc, 'db'):
+            source = self.get_commission_category_source()
+            self._svc.db.save_config('commission_category_source', source)
+
     def get_exchange_rate(self) -> float:
         """Returns the exchange rate to use (CNY→RUB)"""
         if self.rb_rate_specified.isChecked():
@@ -648,8 +736,11 @@ class DiscountCalcWidget(QWidget):
         self.btn_calculate.setEnabled(count > 0)
         self.lbl_match_status.setText(f"已匹配 {count} 条" if count > 0 else "无匹配结果")
         self.progress.setVisible(False)
-        self.lbl_workflow_hint.setText("步骤1 已完成，可以继续执行步骤2 计算盈亏。")
         self._refresh_dashboard()
+        # Auto-chain calculate if _pending_auto_calculate flag is set
+        if self._pending_auto_calculate and count > 0:
+            self._pending_auto_calculate = False
+            self._on_calculate()
 
     def set_calc_result(self, count: int):
         """Called by MainWindow after calculation completes."""
@@ -657,7 +748,6 @@ class DiscountCalcWidget(QWidget):
         self.progress.setVisible(False)
         self.lbl_file.setText(f"已计算 {count} 条结果")
         self._calc_done = True  # 标记已完成过计算，参数修改后可重算
-        self.lbl_workflow_hint.setText("步骤2 已完成，建议筛选亏损款并导出处理建议。")
         self._refresh_dashboard()
 
     def is_matched(self) -> bool:
@@ -688,6 +778,56 @@ class DiscountCalcWidget(QWidget):
 
     def get_currency(self) -> str:
         return getattr(self, '_last_currency', 'CNY')
+
+    # ── Calc mode & step status ──
+
+    def get_calc_mode(self) -> str:
+        """Return current calc mode: 'profit_rate' or 'fixed_profit'"""
+        return "fixed_profit" if self.rb_fixed_profit.isChecked() else "profit_rate"
+
+    def get_target_profit_amount(self) -> float:
+        """Return the inline target profit value"""
+        return self.spin_target_profit.value()
+
+    def _on_calc_mode_changed(self):
+        """Switch spin_target_profit between rate (%) and amount (¥)"""
+        if self.rb_fixed_profit.isChecked():
+            self._calc_mode = "fixed_profit"
+            self.spin_target_profit.setRange(0, 100000)
+            self.spin_target_profit.setDecimals(2)
+            self.spin_target_profit.setSuffix(" ¥")
+            self.spin_target_profit.setValue(20.0)
+        else:
+            self._calc_mode = "profit_rate"
+            self.spin_target_profit.setRange(0, 100)
+            self.spin_target_profit.setDecimals(1)
+            self.spin_target_profit.setSuffix(" %")
+            self.spin_target_profit.setValue(10.0)
+
+    def _update_step_status(self, step: int, status: str):
+        """Update step status indicator.
+        status: 'pending' | 'active' | 'done'
+        """
+        label = self._step_status_labels.get(step)
+        if not label:
+            return
+        colors = {"pending": "#9CA3AF", "active": "#4338CA", "done": "#059669"}
+        texts = {"pending": "待执行", "active": "进行中...", "done": "已完成 ✓"}
+        label.setText(texts.get(status, ""))
+        label.setStyleSheet(
+            f"color: {colors.get(status, '#9CA3AF')}; font-size: 11px; font-weight: 600;"
+        )
+        # Update the step block frame objectName for QSS styling
+        # Walk up to find the QFrame parent (stepBlock)
+        parent = label.parent()
+        if parent and isinstance(parent, QFrame):
+            if status == "done":
+                parent.setObjectName("stepBlockDone")
+            elif status == "active":
+                parent.setObjectName("stepBlockActive")
+            else:
+                parent.setObjectName("stepBlock")
+            parent.setStyleSheet("")  # Force re-apply QSS
 
     # ── 筛选功能 ──
 
@@ -811,6 +951,12 @@ class DiscountCalcWidget(QWidget):
                 if unmatched_col is not None:
                     proxy.set_column_filter(unmatched_col, {"❌"})
 
+            # 未匹配类目筛选: category_matched == False (displayed as "❌")
+            if self.chk_unmatched_category.isChecked():
+                unmatched_cat_col = self._find_column(tbl, "category_matched")
+                if unmatched_cat_col is not None:
+                    proxy.set_column_filter(unmatched_cat_col, {"❌"})
+
         self._update_filter_count()
 
     def _update_filter_count(self):
@@ -822,6 +968,7 @@ class DiscountCalcWidget(QWidget):
         visible = current._proxy.rowCount()
         has_filter = (self.chk_profit_filter.isChecked()
                       or self.chk_unmatched.isChecked()
+                      or self.chk_unmatched_category.isChecked()
                       or self.search_input.text().strip())
         if has_filter:
             self.lbl_filter_count.setText(f"筛选结果: {visible}/{total} 条")
@@ -832,6 +979,7 @@ class DiscountCalcWidget(QWidget):
         """Clear all filters on all 4 tables."""
         self.chk_profit_filter.setChecked(False)
         self.chk_unmatched.setChecked(False)
+        self.chk_unmatched_category.setChecked(False)
         self.search_input.clear()
         for tbl in self._all_tables():
             tbl._proxy.clear_all_filters()

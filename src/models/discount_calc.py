@@ -55,5 +55,10 @@ class CalcResultRow:
     min_price: Optional[float] = None         # 建议最低价
     target_discount: Optional[int] = None     # 目标折扣
     target_price: Optional[float] = None      # 目标价格
+    cbase: Optional[float] = None
+    crisk: Optional[float] = None
+    r_total: Optional[float] = None
+    total_fixed: Optional[float] = None
+    target_new_price: Optional[float] = None
     # 元数据
     calc_batch: str = ""          # 计算批次ID

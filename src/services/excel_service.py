@@ -36,11 +36,13 @@ class ExcelService:
 
     def read_template(self, file_path: str) -> List[ProductRow]:
         """Read all product rows from the uploaded Excel template."""
-        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        wb = openpyxl.load_workbook(file_path, data_only=True)
         ws = wb.active
 
         rows = []
-        for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
+        for row_cells in ws.iter_rows(min_row=2):
+            row_idx = row_cells[0].row  # Actual Excel row number from cell
+            row = tuple(cell.value for cell in row_cells)
             seller_sku = row[self.COL_SELLER_SKU - 1] if len(row) >= self.COL_SELLER_SKU else None
             if not seller_sku:
                 continue

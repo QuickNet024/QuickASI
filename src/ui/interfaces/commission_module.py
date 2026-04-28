@@ -287,6 +287,12 @@ class _CommissionWidget(QWidget):
         self.progress.setVisible(False)
         layout.addWidget(self.progress)
 
+    def _cleanup_worker(self, worker_attr: str = '_worker'):
+        old = getattr(self, worker_attr, None)
+        if old is not None:
+            old.deleteLater()
+            setattr(self, worker_attr, None)
+
     # ── 同步佣金（API，多平台选择）──
 
     def _on_sync_api(self):
@@ -310,12 +316,14 @@ class _CommissionWidget(QWidget):
         self.progress.setRange(0, 0)
         if self._signals:
             self._signals.sync_started.emit()
+        self._cleanup_worker()
         self._worker = CommissionSyncWorker(self.db, platforms)
         self._worker.finished.connect(self._on_sync_done)
         self._worker.error.connect(self._on_error)
         self._worker.start()
 
     def _on_sync_done(self, total, synced_list):
+        self._worker = None
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText("同步佣金")
         self.progress.setVisible(False)
@@ -351,12 +359,14 @@ class _CommissionWidget(QWidget):
         self.btn_import.setText("导入中...")
         if self._signals:
             self._signals.sync_started.emit()
+        self._cleanup_worker()
         self._worker = CommissionImportWorker(self.db, path, platform, shop_type)
         self._worker.finished.connect(self._on_import_done)
         self._worker.error.connect(self._on_error)
         self._worker.start()
 
     def _on_import_done(self, count, platform, shop_type):
+        self._worker = None
         type_label = f"{platform.upper()} {'本土' if shop_type == 'local' else '跨境'}"
         self.btn_import.setEnabled(True)
         self.btn_import.setText("导入佣金表")
@@ -368,6 +378,7 @@ class _CommissionWidget(QWidget):
             f"成功导入 {count} 条 {type_label} 佣金数据")
 
     def _on_error(self, err):
+        self._worker = None
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText("同步佣金")
         self.btn_import.setEnabled(True)
@@ -384,6 +395,7 @@ class _CommissionWidget(QWidget):
             if self._worker.isRunning():
                 self._worker.terminate()
                 self._worker.wait(1000)
+        self._cleanup_worker()
 
     # ── API 设置（3个平台独立配置）──
 
