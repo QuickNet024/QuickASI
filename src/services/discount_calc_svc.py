@@ -328,10 +328,11 @@ class DiscountCalcService:
                 result.weight = product.weight if product.weight else None
             else:
                 result.sku_matched = False
-                result.commission_source = "产品未匹配"
                 result.dimensions = Config.DEFAULT_DIMENSIONS
-                results.append(result)
-                continue
+                if category_source != "excel":
+                    result.commission_source = "产品未匹配"
+                    results.append(result)
+                    continue
 
             # Match category → Commission rate（使用缓存的佣金表列表）
             if category_source == "excel":
