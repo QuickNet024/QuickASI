@@ -867,6 +867,19 @@ class MainWindow(QMainWindow):
 
     # ── Export ────────────────────────────────
 
+    @staticmethod
+    def _passes_export_filter(profit, discounted_price, mode, threshold) -> bool:
+        """Check if an item should be included in export based on filter config."""
+        if profit is None:
+            return False
+        if mode == "profit_value":
+            return profit < threshold
+        # mode == "profit_rate"
+        if discounted_price is None or discounted_price == 0:
+            return False
+        profit_rate = profit / discounted_price * 100
+        return profit_rate < threshold
+
     def _on_export(self):
         combined = self._discount_svc.get_import_data()
         if not combined or all(calc is None for _, calc in combined):
@@ -888,6 +901,8 @@ class MainWindow(QMainWindow):
 
         try:
             strategy = self.discount_calc.get_strategy()
+            filter_mode = self.discount_calc.get_export_filter_mode()
+            filter_threshold = self.discount_calc.get_export_filter_threshold()
             discount_updates = {}
             price_updates = {}
             negative_discount_rows = []  # 记录折扣被修正为0的行
@@ -903,25 +918,26 @@ class MainWindow(QMainWindow):
                 if not row_num:
                     continue
                 profit = calc[19]  # profit
+                dp = calc[16] if calc[16] is not None else 0  # discounted_price
                 if profit is None:
                     continue
                 target_discount = calc[22]  # target_discount (目标折扣)
                 min_price = calc[21]        # min_price
 
                 if strategy in (DiscountCalcWidget.STRATEGY_DISCOUNT_ONLY, DiscountCalcWidget.STRATEGY_BOTH):
-                    if profit < 0 and target_discount is not None:
+                    if self._passes_export_filter(profit, dp, filter_mode, filter_threshold) and target_discount is not None:
                         if target_discount < 0:
                             negative_discount_rows.append(row_num)
                             target_discount = 0
                         discount_updates[row_num] = target_discount
 
                 if strategy in (DiscountCalcWidget.STRATEGY_PRICE_ONLY, DiscountCalcWidget.STRATEGY_BOTH):
-                    if profit < 0 and min_price is not None:
+                    if self._passes_export_filter(profit, dp, filter_mode, filter_threshold) and min_price is not None:
                         price_updates[row_num] = min_price
 
                 # 保持折扣调价: 负折扣时保留当前折扣，用 target_new_price 写新价
                 if strategy == DiscountCalcWidget.STRATEGY_KEEP_DISCOUNT:
-                    if profit < 0 and target_discount is not None:
+                    if self._passes_export_filter(profit, dp, filter_mode, filter_threshold) and target_discount is not None:
                         if target_discount < 0:
                             target_new_price = calc[29] if len(calc) > 29 and calc[29] else min_price
                             price_updates[row_num] = target_new_price
@@ -930,11 +946,11 @@ class MainWindow(QMainWindow):
 
                 # 折扣归零调价: 负折扣时折扣归零，用 target_price 写新价
                 if strategy == DiscountCalcWidget.STRATEGY_ZERO_DISCOUNT:
-                    if profit < 0 and target_discount is not None:
+                    if self._passes_export_filter(profit, dp, filter_mode, filter_threshold) and target_discount is not None:
                         if target_discount < 0:
                             discount_updates[row_num] = 0
-                            target_price = calc[23] if calc[23] else min_price
-                            price_updates[row_num] = target_price
+                            target_new_price = calc[29] if len(calc) > 29 and calc[29] else min_price
+                            price_updates[row_num] = target_new_price
                         else:
                             discount_updates[row_num] = target_discount
 
