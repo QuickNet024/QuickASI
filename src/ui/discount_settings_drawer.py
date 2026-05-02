@@ -188,6 +188,7 @@ class DiscountSettingsDrawer(QFrame):
         cl.addWidget(self._build_group_exchange_rate())
         cl.addWidget(self._build_group_target())
         cl.addWidget(self._build_group_strategy())
+        cl.addWidget(self._build_group_export_filter())
         cl.addWidget(self._build_group_actions())
         cl.addStretch()
 
@@ -323,6 +324,35 @@ class DiscountSettingsDrawer(QFrame):
 
         return group
 
+    # -- 配置组 4b: 导出筛选 ------------------------------------------------
+
+    def _build_group_export_filter(self) -> QGroupBox:
+        """按利润值/利润率 radio + 阈值 spinbox，仅导出低于阈值的商品."""
+        group = QGroupBox("导出筛选")
+        layout = QVBoxLayout(group)
+        layout.setSpacing(8)
+
+        self._export_filter_group = QButtonGroup(self)
+        self._radio_profit_value = QRadioButton("按利润值")
+        self._radio_profit_rate = QRadioButton("按利润率")
+        self._export_filter_group.addButton(self._radio_profit_value)
+        self._export_filter_group.addButton(self._radio_profit_rate)
+        self._radio_profit_value.setChecked(True)
+        layout.addWidget(self._radio_profit_value)
+        layout.addWidget(self._radio_profit_rate)
+
+        self._spin_export_threshold = QDoubleSpinBox()
+        self._spin_export_threshold.setRange(0, 99999)
+        self._spin_export_threshold.setSuffix(" 元")
+        self._spin_export_threshold.setDecimals(2)
+        self._spin_export_threshold.setValue(0)
+        layout.addWidget(self._spin_export_threshold)
+
+        layout.addWidget(QLabel("仅导出低于此阈值的商品"))
+
+        self._radio_profit_value.toggled.connect(self._toggle_export_threshold_spin)
+        return group
+
     # -- 配置组 5: 操作按钮 ------------------------------------------------
 
     def _build_group_actions(self) -> QGroupBox:
@@ -370,6 +400,19 @@ class DiscountSettingsDrawer(QFrame):
             self._spin_target.setSuffix(" ¥")
             self._spin_target.setDecimals(2)
             self._spin_target.setValue(20.0)
+
+    def _toggle_export_threshold_spin(self, _checked: bool):
+        """Swap export threshold spinbox range/suffix for value vs rate."""
+        if self._radio_profit_value.isChecked():
+            self._spin_export_threshold.setRange(0, 99999)
+            self._spin_export_threshold.setSuffix(" 元")
+            self._spin_export_threshold.setDecimals(2)
+            self._spin_export_threshold.setValue(0)
+        else:
+            self._spin_export_threshold.setRange(0, 100)
+            self._spin_export_threshold.setSuffix(" %")
+            self._spin_export_threshold.setDecimals(1)
+            self._spin_export_threshold.setValue(10.0)
 
     def _on_apply(self):
         self.applied.emit()
@@ -462,6 +505,8 @@ class DiscountSettingsDrawer(QFrame):
         calc_mode=None,
         target_value=None,
         strategy=None,
+        export_filter_mode=None,
+        export_filter_threshold=None,
     ):
         """Pre-populate all controls. Pass ``None`` to leave a field unchanged."""
         if shop_type is not None:
@@ -488,6 +533,13 @@ class DiscountSettingsDrawer(QFrame):
             self._spin_target.setValue(target_value)
         if strategy is not None:
             self._set_combo_by_data(self._combo_strategy, strategy)
+        if export_filter_mode is not None:
+            if export_filter_mode == "profit_rate":
+                self._radio_profit_rate.setChecked(True)
+            else:
+                self._radio_profit_value.setChecked(True)
+        if export_filter_threshold is not None:
+            self._spin_export_threshold.setValue(export_filter_threshold)
 
     def get_values(self) -> dict:
         """Return a dict of all current configuration values."""
@@ -501,6 +553,8 @@ class DiscountSettingsDrawer(QFrame):
             "calc_mode": "profit_rate" if self._rb_profit_rate.isChecked() else "fixed_profit",
             "target_value": self._spin_target.value(),
             "strategy": self._combo_strategy.currentData(),
+            "export_filter_mode": "profit_rate" if self._radio_profit_rate.isChecked() else "profit_value",
+            "export_filter_threshold": self._spin_export_threshold.value(),
         }
 
     def load_commission_tables(self, tables: list[tuple[str, str]]):

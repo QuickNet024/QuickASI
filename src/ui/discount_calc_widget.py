@@ -59,6 +59,10 @@ class DiscountCalcWidget(QWidget):
         self._exchange_rate_mode = "realtime"
         self._calc_done = False
         self._drawer = None
+        self._export_filter_mode = "profit_value"
+        self._export_filter_threshold = 0.0
+        self._export_filter_threshold_local = 0.0
+        self._export_filter_mode_local = "profit_value"
 
         # Debounced search timer (300ms)
         self._search_timer = QTimer(self)
@@ -300,6 +304,8 @@ class DiscountCalcWidget(QWidget):
             calc_mode=self._calc_mode,
             target_value=self._target_value,
             strategy=self._last_strategy,
+            export_filter_mode=self._export_filter_mode,
+            export_filter_threshold=self._export_filter_threshold,
         )
         self._drawer.open()
 
@@ -315,6 +321,18 @@ class DiscountCalcWidget(QWidget):
         self._calc_mode = vals["calc_mode"]
         self._target_value = vals["target_value"]
         self._last_strategy = vals["strategy"]
+        if "export_filter_mode" in vals:
+            mode = vals["export_filter_mode"]
+            if self._last_shop_type == "wb_local":
+                self._export_filter_mode_local = mode
+            else:
+                self._export_filter_mode = mode
+        if "export_filter_threshold" in vals:
+            threshold = vals["export_filter_threshold"]
+            if self._last_shop_type == "wb_local":
+                self._export_filter_threshold_local = threshold
+            else:
+                self._export_filter_threshold = threshold
         # Update currency
         self._last_currency = "RUB" if self._last_shop_type == "wb_local" else "CNY"
         self._drawer.close()
@@ -352,6 +370,10 @@ class DiscountCalcWidget(QWidget):
             "drawer_calc_mode": ("calc_mode", str),
             "drawer_target_value": ("target_value", float),
             "drawer_strategy": ("strategy", str),
+            "drawer_export_filter_mode": ("export_filter_mode_cross", str),
+            "drawer_export_filter_threshold": ("export_filter_threshold_cross", float),
+            "drawer_export_filter_mode_local": ("export_filter_mode_local", str),
+            "drawer_export_filter_threshold_local": ("export_filter_threshold_local", float),
         }
         attr_map = {
             "shop_type": "_last_shop_type",
@@ -363,6 +385,10 @@ class DiscountCalcWidget(QWidget):
             "calc_mode": "_calc_mode",
             "target_value": "_target_value",
             "strategy": "_last_strategy",
+            "export_filter_mode_cross": "_export_filter_mode",
+            "export_filter_threshold_cross": "_export_filter_threshold",
+            "export_filter_mode_local": "_export_filter_mode_local",
+            "export_filter_threshold_local": "_export_filter_threshold_local",
         }
         for db_key, (name, converter) in key_map.items():
             raw = saved.get(db_key, "")
@@ -580,6 +606,16 @@ class DiscountCalcWidget(QWidget):
         if tbl is None or tbl == "None":
             return "commission_wb_cross_border"
         return tbl
+
+    def get_export_filter_mode(self) -> str:
+        if self._last_shop_type == "wb_local":
+            return self._export_filter_mode_local
+        return self._export_filter_mode
+
+    def get_export_filter_threshold(self) -> float:
+        if self._last_shop_type == "wb_local":
+            return self._export_filter_threshold_local
+        return self._export_filter_threshold
 
     def set_export_enabled(self, enabled: bool):
         self.btn_export.setEnabled(enabled)
