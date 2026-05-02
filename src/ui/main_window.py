@@ -631,7 +631,7 @@ class MainWindow(QMainWindow):
                     "category": imp[3] or "",
                     "current_price": imp[10] or "",
                     "current_discount": imp[12] or 0,
-                    "discounted_price": round(float(imp[10]) * (1 - float(imp[12]) / 100), 2) if imp[10] is not None and imp[12] is not None else None,
+                    "discounted_price": round(self._safe_float(imp[10], 0) * (1 - self._safe_float(imp[12], 0) / 100), 2) if imp[10] is not None and imp[12] is not None else None,
                     "distribution_price": None,
                     "shipping_fee": None,
                     "seller_stock": str(imp[8] or ""),
@@ -669,7 +669,7 @@ class MainWindow(QMainWindow):
                     "category": calc[7] or imp[3] or "",  # product_category or raw category
                     "current_price": imp[10] or "",
                     "current_discount": imp[12] or 0,
-                    "discounted_price": round(float(imp[10]) * (1 - float(imp[12]) / 100), 2) if imp[10] is not None and imp[12] is not None else calc[16],    # discounted_price
+                    "discounted_price": round(self._safe_float(imp[10], 0) * (1 - self._safe_float(imp[12], 0) / 100), 2) if imp[10] is not None and imp[12] is not None else calc[16],    # discounted_price
                     "distribution_price": calc[6],   # distribution_price (original RUB)
                     "shipping_fee": calc[17],        # shipping_fee
                     "seller_stock": calc[12] or str(imp[8] or ""),  # seller_stock from calc or import
@@ -961,8 +961,8 @@ class MainWindow(QMainWindow):
                     if self._passes_export_filter(profit, dp, filter_mode, filter_threshold) and target_discount is not None:
                         if target_discount < 0:
                             discount_updates[row_num] = 0
-                            target_new_price = calc[29] if len(calc) > 29 and calc[29] else min_price
-                            price_updates[row_num] = target_new_price
+                            target_price = calc[23] if calc[23] else min_price
+                            price_updates[row_num] = target_price
                         else:
                             discount_updates[row_num] = target_discount
 
