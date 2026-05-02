@@ -19,6 +19,7 @@ class TestMainWindowWorkerCleanup:
 
         mock_self = MagicMock()
         mock_worker = MagicMock()
+        mock_worker.isRunning.return_value = False  # Thread has stopped
         mock_self._import_worker = mock_worker
 
         # Call the cleanup method
@@ -48,7 +49,7 @@ class TestMainWindowWorkerCleanup:
 
         MainWindow._cleanup_worker(mock_self, 'some_worker')
 
-        assert mock_self.some_worker is None
+        assert mock_self.some_worker is mock_worker
 
 
 class TestModuleWorkerCleanup:

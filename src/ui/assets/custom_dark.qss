@@ -1,13 +1,5 @@
 /* ============================================
- * custom.qss — Supplementary CSS for qt-material's css_file parameter
- * ============================================
- * IMPORTANT: All curly braces are doubled ({{ and }}) because qt-material
- * calls .format(**os.environ) on the css_file content. Single braces would
- * cause a KeyError crash at runtime.
- *
- * This file contains ONLY custom objectName (#id) and [class="..."] selectors
- * that qt-material does not provide natively. Standard widget styles
- * (QPushButton base, QLineEdit, QComboBox, etc.) are handled by qt-material.
+ * custom_dark.qss — Dark theme QSS for qt-material's css_file parameter
  * ============================================ */
 
 /* ── QTableView Item Override ──
@@ -27,14 +19,14 @@ QTableView::item:alternate {{
  */
 QTableView,
 QTableWidget {{
-    border: 1px solid #E0E0E0;
+    border: 1px solid #3C3C4C;
     border-radius: 8px;
-    background: #FFFFFF;
-    alternate-background-color: #F9FAFB;
-    selection-background-color: #E0E7FF;
-    selection-color: #1C1B1F;
+    background: #1E1E2E;
+    alternate-background-color: #252535;
+    selection-background-color: #1E1E4A;
+    selection-color: #E0E0E0;
     font-size: 12px;
-    gridline-color: #F0F0F0;
+    gridline-color: #3A3A4A;
 }}
 
 QTableView::item,
@@ -49,13 +41,13 @@ QTableWidget::item:alternate {{
 }}
 
 QHeaderView::section {{
-    background: #F5F5F5;
-    color: #555;
+    background: #252535;
+    color: #9AA0A6;
     font-weight: 600;
     font-size: 12px;
     padding: 8px 12px;
     border: none;
-    border-bottom: 2px solid #E0E0E0;
+    border-bottom: 2px solid #3C3C4C;
     min-height: 32px;
 }}
 
@@ -63,19 +55,19 @@ QHeaderView::section {{
  * Layout — Sidebar & Top Bar
  * ══════════════════════════════════════════════ */
 QWidget#sidebar {{
-    background: #FFFFFF;
-    border-right: 1px solid #E0E0E0;
+    background: #1E1E2E;
+    border-right: 1px solid #3C3C4C;
 }}
 
 QWidget#topbar {{
-    background: #FFFFFF;
-    border-bottom: 1px solid #E0E0E0;
+    background: #1E1E2E;
+    border-bottom: 1px solid #3C3C4C;
     min-height: 72px;
     max-height: 72px;
 }}
 
 QWidget#syncGridContainer {{
-    background: #F5F5F5;
+    background: #252535;
 }}
 
 /* ══════════════════════════════════════════════
@@ -84,18 +76,18 @@ QWidget#syncGridContainer {{
 QLabel#pageTitle {{
     font-size: 20px;
     font-weight: 700;
-    color: #111827;
+    color: #E0E0E0;
 }}
 
 QLabel#pageSubtitle {{
     font-size: 12px;
-    color: #6B7280;
+    color: #9AA0A6;
 }}
 
 QLabel#contextBadge {{
-    background: #EEF2FF;
-    color: #4338CA;
-    border: 1px solid #C7D2FE;
+    background: #1E1E4A;
+    color: #818CF8;
+    border: 1px solid #818CF8;
     border-radius: 8px;
     padding: 6px 10px;
     font-size: 11px;
@@ -104,13 +96,13 @@ QLabel#contextBadge {{
 
 QLabel#contextHint {{
     font-size: 11px;
-    color: #6B7280;
+    color: #9AA0A6;
 }}
 
 QLabel#exchangeRate {{
     font-weight: 600;
     font-size: 13px;
-    color: #1C1B1F;
+    color: #E0E0E0;
 }}
 
 QLabel#exchangeTimestamp {{
@@ -120,7 +112,7 @@ QLabel#exchangeTimestamp {{
 
 QLabel#fieldLabel {{
     font-size: 11px;
-    color: #64748B;
+    color: #9AA0A6;
     font-weight: 600;
 }}
 
@@ -128,13 +120,13 @@ QLabel#fieldLabel {{
  * Stat Labels (class selectors)
  * ══════════════════════════════════════════════ */
 QLabel[class="stat-profit"] {{
-    color: #059669;
+    color: #10B981;
     font-weight: 600;
     font-size: 14px;
 }}
 
 QLabel[class="stat-loss"] {{
-    color: #DC2626;
+    color: #EF4444;
     font-weight: 600;
     font-size: 14px;
 }}
@@ -147,7 +139,7 @@ QLabel[class="stat-unmatched"] {{
 QLabel[class="stat-total"] {{
     font-weight: 600;
     font-size: 14px;
-    color: #1C1B1F;
+    color: #E0E0E0;
 }}
 
 QLabel[class="stat-label"] {{
@@ -161,9 +153,9 @@ QLabel[class="stat-label"] {{
 
 /* Primary Button */
 QPushButton[class="btn-primary"] {{
-    background: #4338CA;
+    background: #818CF8;
     border: none;
-    color: #FFFFFF;
+    color: #1E1E2E;
     font-weight: 600;
     border-radius: 8px;
     padding: 6px 14px;
@@ -171,33 +163,33 @@ QPushButton[class="btn-primary"] {{
     text-align: center;
 }}
 QPushButton[class="btn-primary"]:hover {{
-    background: #3730A3;
+    background: #6366F1;
 }}
 QPushButton[class="btn-primary"]:pressed {{
-    background: #312E81;
+    background: #4F46E5;
 }}
 QPushButton[class="btn-primary"]:disabled {{
-    background: #C7D2FE;
-    color: #FFFFFF;
+    background: #818CF8;
+    color: #1E1E2E;
 }}
 
 /* Danger / Cancel Button */
 QPushButton[class="btn-danger"] {{
-    background: #DC2626;
+    background: #EF4444;
     border: none;
-    color: #FFFFFF;
+    color: #1E1E2E;
     font-weight: 600;
     border-radius: 8px;
 }}
 QPushButton[class="btn-danger"]:hover {{
-    background: #B91C1C;
+    background: #DC2626;
 }}
 
 /* Success Button */
 QPushButton[class="btn-success"] {{
-    background: #059669;
+    background: #10B981;
     border: none;
-    color: #FFFFFF;
+    color: #1E1E2E;
     font-weight: 600;
     border-radius: 8px;
     padding: 6px 14px;
@@ -205,21 +197,21 @@ QPushButton[class="btn-success"] {{
     text-align: center;
 }}
 QPushButton[class="btn-success"]:hover {{
-    background: #047857;
+    background: #059669;
 }}
 QPushButton[class="btn-success"]:pressed {{
-    background: #065F46;
+    background: #047857;
 }}
 QPushButton[class="btn-success"]:disabled {{
-    background: #E5E7EB;
-    color: #94A3B8;
+    background: #3C3C4C;
+    color: #6B7280;
 }}
 
 /* Outline Button */
 QPushButton[class="btn-outline"] {{
-    background: #FFFFFF;
-    border: 1px solid #CBD5E1;
-    color: #4338CA;
+    background: #1E1E2E;
+    border: 1px solid #4A4A5A;
+    color: #818CF8;
     font-weight: 500;
     border-radius: 8px;
     padding: 6px 14px;
@@ -227,8 +219,8 @@ QPushButton[class="btn-outline"] {{
     text-align: center;
 }}
 QPushButton[class="btn-outline"]:hover {{
-    background: #F8FAFC;
-    border-color: #A5B4FC;
+    background: #252535;
+    border-color: #6366F1;
 }}
 
 /* Icon Button */
@@ -240,37 +232,37 @@ QPushButton[class="btn-icon"] {{
     border-radius: 8px;
 }}
 QPushButton[class="btn-icon"]:hover {{
-    background: #EDEDED;
+    background: #3A3A4A;
 }}
 
 /* Mini Button */
 QPushButton[class="mini-btn"] {{
     font-size: 12px;
     padding: 0;
-    border: 1px solid #C4C4C4;
+    border: 1px solid #4A4A5A;
     border-radius: 3px;
     background: transparent;
-    color: #666;
+    color: #9AA0A6;
     min-height: 20px;
 }}
 QPushButton[class="mini-btn"]:hover {{
-    background: #F0F0F0;
-    color: #333;
+    background: #3A3A4A;
+    color: #9AA0A6555;
 }}
 
 /* Column Header Label */
 QLabel[class="col-header"] {{
     font-weight: bold;
-    color: #666;
+    color: #9AA0A6;
     background: transparent;
 }}
 
 /* Thumbnail Placeholder */
 QLabel[class="thumbnail-placeholder"] {{
-    background: #F5F5F5;
-    border: 1px dashed #C4C4C4;
+    background: #252535;
+    border: 1px dashed #4A4A5A;
     border-radius: 8px;
-    color: #BDBDBD;
+    color: #4A4A5A;
     font-size: 10px;
 }}
 
@@ -280,25 +272,25 @@ QLabel[class="thumbnail-placeholder"] {{
 QPushButton#cellViewBtn {{
     font-size: 11px;
     padding: 1px 4px;
-    border: 1px solid #A5B4FC;
+    border: 1px solid #6366F1;
     border-radius: 3px;
-    background: #EEF2FF;
-    color: #4338CA;
+    background: #1E1E4A;
+    color: #818CF8;
     min-height: 0px;
     max-height: 18px;
     min-width: 0px;
     max-width: 40px;
 }}
 QPushButton#cellViewBtn:hover {{
-    background: #C7D2FE;
-    border-color: #4338CA;
+    background: #818CF8;
+    border-color: #818CF8;
 }}
 
 /* ══════════════════════════════════════════════
  * Result Table
  * ══════════════════════════════════════════════ */
 QTableView#resultTable {{
-    border: 1px solid #E0E0E0;
+    border: 1px solid #3C3C4C;
     border-radius: 10px;
 }}
 
@@ -306,8 +298,8 @@ QTableView#resultTable {{
  * Data Card (legacy)
  * ══════════════════════════════════════════════ */
 QWidget#dataCard {{
-    background: #FFFFFF;
-    border: 1px solid #E0E0E0;
+    background: #1E1E2E;
+    border: 1px solid #3C3C4C;
     border-radius: 14px;
 }}
 QWidget#dataCard QLabel {{
@@ -315,12 +307,12 @@ QWidget#dataCard QLabel {{
     border: none;
 }}
 QWidget#dataCard QLabel#cardTitle {{
-    color: #1C1B1F;
+    color: #E0E0E0;
     font-size: 14px;
     font-weight: bold;
 }}
 QWidget#dataCard QFrame#cardSep {{
-    background: #E8E8E8;
+    background: #3C3C4C;
     border: none;
     max-height: 1px;
 }}
@@ -329,9 +321,9 @@ QWidget#dataCard QFrame#cardSep {{
  * Module Card V2 — 分类 accent 色卡片
  * ══════════════════════════════════════════════ */
 QWidget#moduleCard {{
-    background: #FFFFFF;
-    border: 1.5px solid #D4D4D4;
-    border-bottom: 3px solid #B8B8B8;
+    background: #1E1E2E;
+    border: 1.5px solid #4A4A5A;
+    border-bottom: 3px solid #9AA0A6555;
     border-radius: 16px;
     min-height: 60px;
 }}
@@ -341,19 +333,19 @@ QWidget#moduleCard QLabel {{
 }}
 QWidget#moduleCard QLabel#moduleIcon {{
     font-size: 20px;
-    color: #1C1B1F;
+    color: #E0E0E0;
 }}
 QWidget#moduleCard QLabel#moduleTitle {{
-    color: #1C1B1F;
+    color: #E0E0E0;
     font-size: 15px;
     font-weight: bold;
 }}
 QWidget#moduleCard QLabel#moduleVersion {{
-    color: #9CA3AF;
+    color: #6B7280;
     font-size: 11px;
 }}
 QWidget#moduleCard QLabel#moduleDesc {{
-    color: #666;
+    color: #9AA0A6;
     font-size: 11px;
 }}
 
@@ -366,55 +358,55 @@ QFrame#moduleAccentSep {{
 
 /* Blue accent: 飞书 */
 QWidget#moduleCard[accent="blue"] {{
-    border-bottom-color: #4338CA;
+    border-bottom-color: #818CF8;
 }}
 QWidget#moduleCard[accent="blue"]:hover {{
-    border-color: #A5B4FC;
-    border-bottom-color: #4338CA;
-    background: #FAFAFF;
+    border-color: #6366F1;
+    border-bottom-color: #818CF8;
+    background: #1E1E4A;
 }}
 QWidget#moduleCard[accent="blue"] QFrame#moduleAccentSep {{
-    background: #4338CA;
+    background: #818CF8;
 }}
 QWidget#moduleCard[accent="blue"] QLabel#moduleIcon {{
-    color: #4338CA;
+    color: #818CF8;
 }}
 
 /* Green accent: 佣金 */
 QWidget#moduleCard[accent="green"] {{
-    border-bottom-color: #059669;
+    border-bottom-color: #10B981;
 }}
 QWidget#moduleCard[accent="green"]:hover {{
-    border-color: #6EE7B7;
-    border-bottom-color: #059669;
-    background: #F0FDF9;
+    border-color: #10B981;
+    border-bottom-color: #10B981;
+    background: #1A3D2A;
 }}
 QWidget#moduleCard[accent="green"] QFrame#moduleAccentSep {{
-    background: #059669;
+    background: #10B981;
 }}
 QWidget#moduleCard[accent="green"] QLabel#moduleIcon {{
-    color: #059669;
+    color: #10B981;
 }}
 
 /* Orange accent: 汇率 */
 QWidget#moduleCard[accent="orange"] {{
-    border-bottom-color: #D97706;
+    border-bottom-color: #F59E0B;
 }}
 QWidget#moduleCard[accent="orange"]:hover {{
-    border-color: #FCD34D;
-    border-bottom-color: #D97706;
-    background: #FFFBEB;
+    border-color: #F59E0B;
+    border-bottom-color: #F59E0B;
+    background: #3D2A1A;
 }}
 QWidget#moduleCard[accent="orange"] QFrame#moduleAccentSep {{
-    background: #D97706;
+    background: #F59E0B;
 }}
 QWidget#moduleCard[accent="orange"] QLabel#moduleIcon {{
-    color: #D97706;
+    color: #F59E0B;
 }}
 
 /* Legacy moduleSep */
 QWidget#moduleCard QFrame#moduleSep {{
-    background: #EBEBEB;
+    background: #3A3A4A;
     border: none;
     max-height: 1px;
 }}
@@ -423,7 +415,7 @@ QWidget#moduleCard QFrame#moduleSep {{
 QPushButton#moduleRemoveBtn {{
     background: transparent;
     border: none;
-    color: #CCC;
+    color: #9AA0A6666;
     font-size: 16px;
     font-weight: bold;
     border-radius: 12px;
@@ -432,32 +424,32 @@ QPushButton#moduleRemoveBtn {{
     min-width: 24px;
 }}
 QPushButton#moduleRemoveBtn:hover {{
-    background: #FEE2E2;
-    color: #DC2626;
+    background: #3D1A1A;
+    color: #EF4444;
 }}
 QPushButton#moduleRemoveBtn:pressed {{
-    background: #FECACA;
-    color: #B91C1C;
+    background: #4A1A1A;
+    color: #DC2626;
 }}
 
 /* Manage Interface Button */
 QPushButton#btnAddInterface {{
-    background: #F9F9F9;
-    border: 2px dashed #C4C4C4;
+    background: #2D2D3F;
+    border: 2px dashed #4A4A5A;
     border-radius: 14px;
-    color: #666;
+    color: #9AA0A6;
     font-size: 14px;
     font-weight: 500;
 }}
 QPushButton#btnAddInterface:hover {{
-    background: #F0F0FF;
-    border-color: #4338CA;
-    color: #4338CA;
+    background: #2D2D4A;
+    border-color: #818CF8;
+    color: #818CF8;
 }}
 QPushButton#btnAddInterface:pressed {{
-    background: #E0E7FF;
-    border-color: #4338CA;
-    color: #4338CA;
+    background: #1E1E4A;
+    border-color: #818CF8;
+    color: #818CF8;
 }}
 
 /* ══════════════════════════════════════════════
@@ -466,8 +458,8 @@ QPushButton#btnAddInterface:pressed {{
 
 /* Feishu Info Box (Blue) */
 QFrame#feishuInfoBox {{
-    background: #E0E7FF;
-    border: 1px solid #C7D2FE;
+    background: #1E1E4A;
+    border: 1px solid #818CF8;
     border-radius: 10px;
 }}
 QFrame#feishuInfoBox QLabel {{
@@ -477,8 +469,8 @@ QFrame#feishuInfoBox QLabel {{
 
 /* Commission Info Box (Green) */
 QFrame#commissionInfoBox {{
-    background: #D1FAE5;
-    border: 1px solid #6EE7B7;
+    background: #1A3D2A;
+    border: 1px solid #10B981;
     border-radius: 10px;
 }}
 QFrame#commissionInfoBox QLabel {{
@@ -488,8 +480,8 @@ QFrame#commissionInfoBox QLabel {{
 
 /* Rate Box / Exchange Rate Info (Orange) */
 QFrame#rateBox {{
-    background: #FEF3C7;
-    border: 1px solid #FCD34D;
+    background: #3D2A1A;
+    border: 1px solid #F59E0B;
     border-radius: 10px;
 }}
 QFrame#rateBox QLabel {{
@@ -499,19 +491,19 @@ QFrame#rateBox QLabel {{
 QLabel#rateValue {{
     font-size: 24px;
     font-weight: bold;
-    color: #D97706;
+    color: #F59E0B;
 }}
 QLabel#rateHint {{
     font-size: 11px;
-    color: #92400E;
+    color: #FCD34D;
 }}
 
 /* ══════════════════════════════════════════════
  * Settings Page Card
  * ══════════════════════════════════════════════ */
 QGroupBox#settingsCard {{
-    background: #FFFFFF;
-    border: 1px solid #E0E0E0;
+    background: #1E1E2E;
+    border: 1px solid #3C3C4C;
     border-radius: 14px;
     margin-top: 0px;
     padding: 22px 18px 18px 18px;
@@ -520,8 +512,8 @@ QGroupBox#settingsCard::title {{
     subcontrol-origin: border;
     subcontrol-position: top center;
     padding: 4px 18px;
-    color: #1C1B1F;
-    background: #FFFFFF;
+    color: #E0E0E0;
+    background: #1E1E2E;
     font-weight: bold;
     font-size: 14px;
 }}
@@ -530,8 +522,8 @@ QGroupBox#settingsCard::title {{
  * Column Separator
  * ══════════════════════════════════════════════ */
 QFrame#colSep {{
-    color: #E0E0E0;
-    background: #E0E0E0;
+    color: #3C3C4C;
+    background: #3C3C4C;
     max-height: 1px;
     border: none;
 }}
@@ -540,75 +532,75 @@ QFrame#colSep {{
  * Discount Dashboard
  * ══════════════════════════════════════════════ */
 QFrame#summaryCard {{
-    background: #FFFFFF;
-    border: 1px solid #E5E7EB;
+    background: #1E1E2E;
+    border: 1px solid #3C3C4C;
     border-radius: 8px;
 }}
 
 QLabel#summaryCardTitle {{
     font-size: 11px;
-    color: #6B7280;
+    color: #9AA0A6;
 }}
 
 QLabel#summaryCardValue {{
     font-size: 18px;
     font-weight: 700;
-    color: #111827;
+    color: #E0E0E0;
 }}
 
 QLabel#summaryCardHint {{
     font-size: 11px;
-    color: #6B7280;
+    color: #9AA0A6;
 }}
 
 QGroupBox#workflowCard {{
-    border: 1px solid #E5E7EB;
+    border: 1px solid #3C3C4C;
     border-radius: 8px;
-    background: #FFFFFF;
+    background: #1E1E2E;
 }}
 
 QLabel#workflowTitle {{
     font-size: 15px;
     font-weight: 700;
-    color: #111827;
+    color: #E0E0E0;
 }}
 
 QLabel#workflowHint {{
     font-size: 12px;
-    color: #6B7280;
+    color: #9AA0A6;
 }}
 
 QLabel#workflowBadges {{
     font-size: 11px;
-    color: #6B7280;
+    color: #9AA0A6;
     padding: 2px 0 6px 0;
 }}
 
 QLabel#fileSummary {{
     font-size: 12px;
-    color: #475569;
+    color: #9AA0A6;
 }}
 
 /* ══════════════════════════════════════════════
  * Step Blocks — 4-step compact workflow
  * ══════════════════════════════════════════════ */
 QFrame#stepBlock {{
-    background: #FFFFFF;
-    border: 1px solid #E5E7EB;
+    background: #1E1E2E;
+    border: 1px solid #3C3C4C;
     border-radius: 8px;
     padding: 6px 14px;
 }}
 
 QFrame#stepBlockDone {{
-    background: #F0FDF4;
-    border: 1px solid #BBF7D0;
+    background: #1A3D2A;
+    border: 1px solid #10B981;
     border-radius: 8px;
     padding: 6px 14px;
 }}
 
 QFrame#stepBlockActive {{
-    background: #EEF2FF;
-    border: 1px solid #C7D2FE;
+    background: #1E1E4A;
+    border: 1px solid #818CF8;
     border-radius: 8px;
     padding: 6px 14px;
 }}
@@ -616,7 +608,7 @@ QFrame#stepBlockActive {{
 QLabel#stepTitle {{
     font-size: 12px;
     font-weight: 700;
-    color: #111827;
+    color: #E0E0E0;
 }}
 
 /* ══════════════════════════════════════════════
@@ -624,8 +616,8 @@ QLabel#stepTitle {{
  * ══════════════════════════════════════════════ */
 QFrame#calcControlGrid,
 QFrame#filterBar {{
-    background: #F8FAFC;
-    border: 1px solid #E2E8F0;
+    background: #252535;
+    border: 1px solid #3C3C4C;
     border-radius: 8px;
 }}
 
@@ -633,9 +625,9 @@ QFrame#filterBar {{
  * Status Bar
  * ══════════════════════════════════════════════ */
 QStatusBar {{
-    background: #FFFFFF;
-    border-top: 1px solid #E0E0E0;
-    color: #666;
+    background: #1E1E2E;
+    border-top: 1px solid #3C3C4C;
+    color: #9AA0A6;
     font-size: 12px;
     padding: 4px 14px;
 }}
@@ -644,15 +636,15 @@ QStatusBar {{
  * Debug Log Window
  * ══════════════════════════════════════════════ */
 QTextEdit#debugLogTextEdit[class="debug-log-dark"] {{
-    background: #1E1E1E;
-    color: #D4D4D4;
-    border: 1px solid #333;
+    background: #2D2D3F;
+    color: #4A4A5A;
+    border: 1px solid #9AA0A6555;
 }}
 
 QTextEdit#debugLogTextEdit[class="debug-log-light"] {{
-    background: #FFFFFF;
-    color: #202124;
-    border: 1px solid #DADCE0;
+    background: #1E1E2E;
+    color: #E0E0E0;
+    border: 1px solid #3C3C4C;
 }}
 
 /* ── Settings Tab: API Key Display (readonly, gray text) ── */
@@ -663,12 +655,12 @@ QLineEdit#apiKeyValue {{
 }}
 
 /* ══════════════════════════════════════════════
- * Accent Button — 一键测算
+ * Accent Button — 一键测算 (Dark)
  * ══════════════════════════════════════════════ */
 QPushButton[class="btn-accent"] {{
-    background: #D97706;
+    background: #F59E0B;
     border: none;
-    color: #FFFFFF;
+    color: #1E1E2E;
     font-weight: 600;
     border-radius: 8px;
     padding: 6px 14px;
@@ -676,23 +668,23 @@ QPushButton[class="btn-accent"] {{
     text-align: center;
 }}
 QPushButton[class="btn-accent"]:hover {{
-    background: #B45309;
+    background: #D97706;
 }}
 QPushButton[class="btn-accent"]:pressed {{
-    background: #92400E;
+    background: #B45309;
 }}
 QPushButton[class="btn-accent"]:disabled {{
-    background: #FDE68A;
-    color: #D4A34A;
+    background: #3D2A1A;
+    color: #9AA0A6;
 }}
 
 /* Toolbar */
 QFrame#calcToolbar {{
-    background: #FFFFFF;
-    border-bottom: 1px solid #E5E7EB;
+    background: #1E1E2E;
+    border-bottom: 1px solid #3C3C4C;
 }}
 
 QFrame#infoBar {{
-    background: #F8FAFC;
-    border-bottom: 1px solid #E5E7EB;
+    background: #252535;
+    border-bottom: 1px solid #3C3C4C;
 }}

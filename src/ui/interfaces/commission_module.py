@@ -290,6 +290,17 @@ class _CommissionWidget(QWidget):
     def _cleanup_worker(self, worker_attr: str = '_worker'):
         old = getattr(self, worker_attr, None)
         if old is not None:
+            try: old.finished.disconnect()
+            except Exception: pass
+            try: old.error.disconnect()
+            except Exception: pass
+            old.requestInterruption()
+            if old.isRunning():
+                old.wait(10000)
+                if old.isRunning():
+                    # Thread still running — keep reference alive
+                    # so Python GC doesn't destroy it
+                    return
             old.deleteLater()
             setattr(self, worker_attr, None)
 
@@ -323,7 +334,7 @@ class _CommissionWidget(QWidget):
         self._worker.start()
 
     def _on_sync_done(self, total, synced_list):
-        self._worker = None
+        self._cleanup_worker()
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText("同步佣金")
         self.progress.setVisible(False)
@@ -366,7 +377,7 @@ class _CommissionWidget(QWidget):
         self._worker.start()
 
     def _on_import_done(self, count, platform, shop_type):
-        self._worker = None
+        self._cleanup_worker()
         type_label = f"{platform.upper()} {'本土' if shop_type == 'local' else '跨境'}"
         self.btn_import.setEnabled(True)
         self.btn_import.setText("导入佣金表")
@@ -378,7 +389,7 @@ class _CommissionWidget(QWidget):
             f"成功导入 {count} 条 {type_label} 佣金数据")
 
     def _on_error(self, err):
-        self._worker = None
+        self._cleanup_worker()
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText("同步佣金")
         self.btn_import.setEnabled(True)
@@ -390,11 +401,7 @@ class _CommissionWidget(QWidget):
         """Stop the worker thread gracefully."""
         if self._worker and self._worker.isRunning():
             self._worker.requestInterruption()
-            self._worker.quit()
-            self._worker.wait(3000)
-            if self._worker.isRunning():
-                self._worker.terminate()
-                self._worker.wait(1000)
+            self._worker.wait(10000)
         self._cleanup_worker()
 
     # ── API 设置（3个平台独立配置）──

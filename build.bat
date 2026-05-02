@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 echo Building WB亏损计算系统...
 echo.
 

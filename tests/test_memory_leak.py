@@ -32,20 +32,34 @@ class TestMemoryLeak:
         assert alive == 0, f"{alive} workers still alive after GC"
 
     def test_cleanup_worker_pattern(self):
-        """验证 cleanup 模式：deleteLater mock + set None"""
+        """验证 cleanup 模式：isRunning=False 时调用 deleteLater"""
         from unittest.mock import MagicMock
         from src.ui.main_window import MainWindow
 
-        # Simulate the cleanup pattern
         mock_self = MagicMock()
         worker1 = MagicMock()
+        worker1.isRunning.return_value = False  # Thread has stopped
         mock_self._worker = worker1
 
-        # Cleanup
         MainWindow._cleanup_worker(mock_self, '_worker')
 
         assert mock_self._worker is None
         worker1.deleteLater.assert_called_once()
+
+    def test_cleanup_worker_skips_running_thread(self):
+        """验证 cleanup 模式：isRunning=True 时不调用 deleteLater"""
+        from unittest.mock import MagicMock
+        from src.ui.main_window import MainWindow
+
+        mock_self = MagicMock()
+        worker2 = MagicMock()
+        worker2.isRunning.return_value = True   # Thread still running
+        mock_self._worker = worker2
+
+        MainWindow._cleanup_worker(mock_self, '_worker')
+
+        assert mock_self._worker is worker2
+        worker2.deleteLater.assert_not_called()  # Must NOT delete running thread
 
     def test_cache_prevents_repeated_queries(self):
         """验证 get_import_data 缓存生效"""

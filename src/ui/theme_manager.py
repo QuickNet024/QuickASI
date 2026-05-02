@@ -70,16 +70,16 @@ class ThemeManager:
             logger.error(f"Unknown theme: {theme_name}")
             return
 
-        # Try assets/custom.qss first (T4 will create it), fall back to project root
+        # Load theme-specific QSS
+        if theme_name == "dark":
+            css_file_name = "custom_dark.qss"
+        else:
+            css_file_name = "custom.qss"
         css_file_path = os.path.join(
-            os.path.dirname(__file__), "assets", "custom.qss"
+            os.path.dirname(__file__), "assets", css_file_name
         )
         if not os.path.isfile(css_file_path):
-            css_file_path = os.path.join(
-                os.path.dirname(__file__), "..", "..", "custom_override.qss"
-            )
-            if not os.path.isfile(css_file_path):
-                css_file_path = None
+            css_file_path = None
 
         try:
             qt_material.apply_stylesheet(
@@ -90,25 +90,41 @@ class ThemeManager:
             )
             self._current_theme = theme_name
             self._save_preference()
+            from src.ui.table_base import ThemeColors
+            ThemeColors.set_theme(theme_name)
             logger.info(f"Theme applied (qt-material): {theme_name}")
         except Exception as e:
             logger.error(f"Failed to apply theme {theme_name}: {e}")
 
     def _apply_qss_fallback(self, app, theme_name: str):
-        """qt-material 不可用时回退到直接加载 QSS"""
+        """qt-material 不可用时，直接加载 custom.qss/custom_dark.qss"""
+        # Load the appropriate custom QSS file
+        if theme_name == "dark":
+            css_file_name = "custom_dark.qss"
+        else:
+            css_file_name = "custom.qss"
+
         qss_path = os.path.join(
-            os.path.dirname(__file__), "assets", f"{theme_name}.qss"
+            os.path.dirname(__file__), "assets", css_file_name
         )
+
+        if not os.path.isfile(qss_path):
+            logger.error(f"QSS file not found: {qss_path}")
+            return
 
         try:
             with open(qss_path, "r", encoding="utf-8") as f:
                 qss_content = f.read()
+            # Strip doubled curly braces (qt-material format → standalone format)
+            qss_content = qss_content.replace("{{", "{").replace("}}", "}")
             app.setStyleSheet(qss_content)
             self._current_theme = theme_name
             self._save_preference()
+            from src.ui.table_base import ThemeColors
+            ThemeColors.set_theme(theme_name)
             logger.info(f"Theme applied (QSS fallback): {theme_name}")
         except FileNotFoundError:
-            logger.error(f"Theme file not found: {qss_path}")
+            logger.error(f"QSS file not found: {qss_path}")
         except Exception as e:
             logger.error(f"Failed to apply theme {theme_name}: {e}")
 

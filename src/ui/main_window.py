@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QStatusBar, QLabel, QProgressBar, QStackedWidget
 )
 from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QIcon
 
 from src.config import Config
 from src.models.database import DatabaseManager
@@ -129,6 +130,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(get_version_text())
+        self.setWindowIcon(QIcon("ico/ico.png"))
         self.resize(1400, 900)
         self.setMinimumSize(960, 600)
 
@@ -165,10 +167,20 @@ class MainWindow(QMainWindow):
         self._build_statusbar()
 
     def _cleanup_worker(self, worker_attr: str):
-        """安全清理旧Worker：调度删除 + 置空引用。
-        deleteLater()会自动断开所有信号连接。"""
+        """安全清理旧Worker：断开信号 + 请求中断 + 等待结束 + 调度删除 + 置空引用。"""
         old = getattr(self, worker_attr, None)
         if old is not None:
+            try: old.finished.disconnect()
+            except Exception: pass
+            try: old.error.disconnect()
+            except Exception: pass
+            old.requestInterruption()
+            if old.isRunning():
+                old.wait(10000)
+                if old.isRunning():
+                    # Thread still running — keep reference alive
+                    # so Python GC doesn't destroy it
+                    return
             old.deleteLater()
             setattr(self, worker_attr, None)
 
@@ -176,32 +188,20 @@ class MainWindow(QMainWindow):
         """Clean up all workers and force application exit."""
         logger.info("MainWindow closing...")
 
-        # 1. Stop CalcWorker (owned by MainWindow)
+        # 1. Stop CalcWorker
         if self._calc_worker and self._calc_worker.isRunning():
             self._calc_worker.requestInterruption()
-            self._calc_worker.quit()
-            self._calc_worker.wait(3000)
-            if self._calc_worker.isRunning():
-                self._calc_worker.terminate()
-                self._calc_worker.wait(1000)
+            self._calc_worker.wait(10000)
 
         # 2. Stop ImportWorker
         if self._import_worker and self._import_worker.isRunning():
             self._import_worker.requestInterruption()
-            self._import_worker.quit()
-            self._import_worker.wait(3000)
-            if self._import_worker.isRunning():
-                self._import_worker.terminate()
-                self._import_worker.wait(1000)
+            self._import_worker.wait(10000)
 
         # 3. Stop MatchWorker
         if self._match_worker and self._match_worker.isRunning():
             self._match_worker.requestInterruption()
-            self._match_worker.quit()
-            self._match_worker.wait(3000)
-            if self._match_worker.isRunning():
-                self._match_worker.terminate()
-                self._match_worker.wait(1000)
+            self._match_worker.wait(10000)
 
         # Cleanup workers
         for attr in ('_import_worker', '_match_worker', '_calc_worker'):
@@ -400,6 +400,7 @@ class MainWindow(QMainWindow):
             self.sidebar.refresh_theme(theme)
             self.top_bar.refresh_theme(theme)
             self.sync_widget.set_theme(theme)
+            self.discount_calc.refresh_theme(theme)
             # 通知 debug 日志窗口
             try:
                 from src.ui.debug_log_window import DebugLogManager
@@ -450,12 +451,12 @@ class MainWindow(QMainWindow):
         self._import_worker.start()
 
     def _on_import_finished(self, file_path: str, count: int):
-        self._import_worker = None
+        self._cleanup_worker('_import_worker')
         self.discount_calc.set_import_result(file_path, count)
         self.status_label.setText(f"导入完成: {count} 行")
 
     def _on_import_error(self, err: str):
-        self._import_worker = None
+        self._cleanup_worker('_import_worker')
         self.discount_calc.set_import_error(err)
         self.status_label.setText("导入失败")
 
@@ -467,6 +468,8 @@ class MainWindow(QMainWindow):
         exchange_rate = self.discount_calc.get_exchange_rate()
         self.status_label.setText("正在匹配...")
 
+        if self._match_worker and self._match_worker.isRunning():
+            return
         self._cleanup_worker('_match_worker')
         self._match_worker = _MatchWorker(
             self._discount_svc, commission_table, exchange_rate,
@@ -478,7 +481,7 @@ class MainWindow(QMainWindow):
         self._match_worker.start()
 
     def _on_match_done(self, count):
-        self._match_worker = None
+        self._cleanup_worker('_match_worker')
         self.discount_calc.set_match_result(count)
         try:
             combined = self._discount_svc.get_import_data()
@@ -506,7 +509,7 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"匹配完成: {count} 条")
 
     def _on_match_error(self, err):
-        self._match_worker = None
+        self._cleanup_worker('_match_worker')
         self.discount_calc.set_match_result(0)
         self.discount_calc.progress.setVisible(False)
         self.status_label.setText("匹配失败")
@@ -545,7 +548,7 @@ class MainWindow(QMainWindow):
         self._calc_worker.start()
 
     def _on_calc_done(self, count):
-        self._calc_worker = None
+        self._cleanup_worker('_calc_worker')
         self.discount_calc.set_calc_result(count)
         combined = self._discount_svc.get_import_data()
 
@@ -569,9 +572,9 @@ class MainWindow(QMainWindow):
         )
 
     def _on_calc_error(self, err):
-        self._calc_worker = None
+        self._cleanup_worker('_calc_worker')
         self.discount_calc.progress.setVisible(False)
-        self.discount_calc.btn_calculate.setEnabled(True)
+        self.discount_calc.btn_calc.setEnabled(True)
         self.status_label.setText("计算失败")
         QMessageBox.warning(self, "计算失败", f"计算过程出错:\n{err}")
 

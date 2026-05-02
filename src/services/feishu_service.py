@@ -315,37 +315,13 @@ class FeishuService:
         col_map = self._get_effective_column_map(config)
         logger.debug(f"使用列映射: {list(col_map.keys())}")
 
-        # ── 阶段1: 尝试批量获取（单次 API 调用） ──
-        # 使用实际列数而非 ZZ(702列)，避免数据量过大导致 504 超时
-        ranges = []
-        for sheet_id, title, grid in active_sheets:
-            row_count = grid.get("row_count", 10000)
-            col_count = min(grid.get("column_count", 52), 52)
-            col_str = self._col_letter(col_count)
-            ranges.append(f"{sheet_id}!A1:{col_str}{row_count}")
-
-        logger.info(f"阶段1: 批量获取 {len(ranges)} 个 Range")
-
-        value_ranges = None
-        try:
-            value_ranges = self._raw_batch_get_ranges(ranges)
-            logger.info(f"批量获取成功，返回 {len(value_ranges)} 个 valueRange")
-        except Exception as e:
-            logger.warning(f"批量获取失败 ({e})，降级为逐个读取")
-
-        if value_ranges is not None:
-            total, synced_sheets = self._parallel_parse_and_save(
-                active_sheets, value_ranges, col_map, progress_cb)
-        else:
-            total, synced_sheets = self._parallel_fetch_and_save(
-                active_sheets, col_map, progress_cb)
+        # Step 3: Fetch all data sequentially (replaces batch+parallel)
+        total, synced_sheets = self._fetch_and_save_sequential(active_sheets, col_map, progress_cb)
 
         # ── 阶段2: 图片同步（多线程增量） ──
         if sync_images:
             logger.info("阶段2: 开始图片同步")
-            self._sync_images_parallel(active_sheets,
-                                       value_ranges if value_ranges else [],
-                                       col_map, progress_cb)
+            self._sync_images_parallel(active_sheets, [], col_map, progress_cb)
         else:
             logger.debug("跳过图片同步（未启用）")
 
@@ -431,6 +407,106 @@ class FeishuService:
                     logger.error(f"Failed to process sheet '{title}': {e}")
 
         logger.info(f"Fetched {total} products from {len(synced_sheets)} sheets (parallel individual)")
+        return total, synced_sheets
+
+    def _preheat_sheets(self, active_sheets, col_map):
+        """Parallel preheat: fire all sheet GET requests to trigger Feishu data prep."""
+        token = self._token or self.get_tenant_token()
+
+        def _preheat_one(sheet_id, col_count, row_count):
+            if self._abort:
+                return
+            try:
+                col_str = self._col_letter(min(col_count, 52))
+                range_str = f"{sheet_id}!A1:{col_str}{row_count}"
+                url = f"{self.base_url}/open-apis/sheets/v2/spreadsheets/{self.spreadsheet_token}/values/{range_str}"
+                headers = {"Authorization": f"Bearer {token}"}
+                params = {
+                    "valueRenderOption": "UnformattedValue",
+                    "dateTimeRenderOption": "FormattedString"
+                }
+                self._get_session().get(url, headers=headers, params=params, timeout=3)
+            except Exception:
+                pass  # Expected: most will return "not ready" or timeout
+
+        max_w = min(len(active_sheets), 10)
+        with ThreadPoolExecutor(max_workers=max_w) as ex:
+            futures = []
+            for sheet_id, title, grid in active_sheets:
+                col_count = grid.get("column_count", 26)
+                row_count = grid.get("row_count", 10000)
+                futures.append(ex.submit(_preheat_one, sheet_id, col_count, row_count))
+            for _ in as_completed(futures):
+                pass
+
+    def _fetch_and_save_sequential(self, active_sheets, col_map,
+                                    progress_cb: Optional[Callable[[int, int, str], None]] = None) -> Tuple[int, List[str]]:
+        """Sequential per-sheet fetch — no parallel reads, with rate-limit sleep and abort support.
+
+        Iterates sheets one by one:
+        - Fetches data via _raw_get_range
+        - Parses via _parse_rows_with_map
+        - Saves via self.db.insert_products_batch
+        - Sleeps 0.2s between sheets to avoid Feishu rate limiting
+        - Checks self._abort flag between sheets for cancellation
+
+        Returns:
+            (total product count, list of synced sheet titles)
+        """
+        total = 0
+        synced_sheets: List[str] = []
+        sheet_count = len(active_sheets)
+
+        logger.info(f"预热阶段: 并行触发 {sheet_count} 个Sheet数据准备...")
+        self._preheat_sheets(active_sheets, col_map)
+        logger.info("预热完成，开始串行收割")
+        if self._abort:
+            logger.warning("同步在预热后被中止")
+            return total, synced_sheets
+
+        for i, (sheet_id, title, grid) in enumerate(active_sheets):
+            # Abort check between sheets
+            if self._abort:
+                logger.warning(f"同步被中止，已同步 {len(synced_sheets)}/{sheet_count} 个Sheet")
+                break
+
+            try:
+                col_count = min(grid.get("column_count", 26), 52)
+                row_count = grid.get("row_count", 10000)
+                col_str = self._col_letter(col_count)
+                range_str = f"{sheet_id}!A1:{col_str}{row_count}"
+
+                rows = self._raw_get_range(range_str)
+                if len(rows) < 2:
+                    logger.debug(f"Sheet '{title}': 无数据行，跳过")
+                    synced_sheets.append(title)  # still counted as attempted
+                    if progress_cb:
+                        progress_cb(i + 1, sheet_count, f"已读取: {title}")
+                    continue
+
+                headers = rows[0]
+                products = self._parse_rows_with_map(headers, rows[1:], title, col_map)
+                if products:
+                    self.db.insert_products_batch(products)
+                    total += len(products)
+                    logger.debug(f"Sheet '{title}' 解析完成: {len(products)} 条产品")
+                synced_sheets.append(title)
+
+                if progress_cb:
+                    progress_cb(i + 1, sheet_count, f"已读取: {title}")
+
+            except SyncAbortException:
+                raise
+            except Exception as e:
+                logger.error(f"Failed to fetch sheet '{title}': {e}")
+                if progress_cb:
+                    progress_cb(i + 1, sheet_count, f"失败: {title}")
+
+            # Rate-limit sleep between sheets (skip after last)
+            if i < sheet_count - 1:
+                time.sleep(0.2)
+
+        logger.info(f"Sequential fetch: {total} products from {len(synced_sheets)} sheets")
         return total, synced_sheets
 
     def _parse_one_sheet(self, vr: dict, title: str, col_map: dict) -> List[Product]:
@@ -875,7 +951,10 @@ class FeishuService:
                 raise
             except Exception as e:
                 last_err = e
-                self._consecutive_failures += 1
+                # Don't count "Data not ready" as a failure — it's a normal temporary state
+                is_not_ready = "not ready" in str(e).lower()
+                if not is_not_ready:
+                    self._consecutive_failures += 1
                 logger.warning(f"Retry {attempt+1}/{self._retry_count} for range {range_str}: {e}")
                 # 连续失败超过阈值 → 立即停止，不再重试
                 if self._consecutive_failures >= self._max_consecutive_failures:
@@ -887,7 +966,7 @@ class FeishuService:
                 if attempt < self._retry_count - 1:
                     delay = self._retry_delay
                     if "not ready" in str(e).lower():
-                        delay = min(3.0 * (attempt + 1), 10.0)  # 递增: 3s, 6s, 9s
+                        delay = min(3.0 * (2 ** attempt), 60.0)  # 3s → 6s → 12s → 24s → 48s → 60s
                         logger.info(f"飞书数据未就绪，等待 {delay:.0f} 秒后重试...")
                     time.sleep(delay)
         raise last_err  # type: ignore[misc]

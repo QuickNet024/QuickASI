@@ -43,9 +43,9 @@ def _mock_sheet_data(headers, rows):
     return {"code": 0, "data": {"valueRange": {"values": [headers] + rows}}}
 
 
-def _mock_batch_response(value_ranges):
-    """Build a batch get response with multiple valueRanges."""
-    return {"code": 0, "data": {"valueRanges": value_ranges}}
+def _mock_range_response(values):
+    """Mock response for individual range endpoint."""
+    return {"code": 0, "data": {"valueRange": {"values": values}}}
 
 
 class TestGetTenantToken:
@@ -114,15 +114,14 @@ class TestSyncAllProducts:
         mock_post_resp.raise_for_status = MagicMock()
         mock_post.return_value = mock_post_resp
 
-        batch_resp = _mock_batch_response([
-            {"values": [["SKU-货号", "分销价格", "长*宽*高(cm)", "类目"],
-                        ["3C5-YX-JC-530-白", 500, "30*20*10", "音响"]]},
-            {"values": [["标题"], ["公告"]]},
-        ])
-
         mock_get_resp = MagicMock()
         mock_get_resp.raise_for_status = MagicMock()
-        mock_get_resp.json.side_effect = [_mock_sheets_response(), batch_resp]
+        mock_get_resp.json.side_effect = [
+            _mock_sheets_response(),
+            _mock_range_response([["SKU-货号", "分销价格", "长*宽*高(cm)", "类目"],
+                                  ["3C5-YX-JC-530-白", 500, "30*20*10", "音响"]]),
+            _mock_range_response([["标题"], ["公告"]]),
+        ]
         mock_get.return_value = mock_get_resp
 
         count, sheets = svc.sync_all_products()
@@ -137,16 +136,12 @@ class TestSyncAllProducts:
         mock_post_resp.raise_for_status = MagicMock()
         mock_post.return_value = mock_post_resp
 
-        batch_resp = _mock_batch_response([
-            {"values": [["SKU-货号", "分销价格", "长*宽*高(cm)", "类目"],
-                        ["SKU-001", 100, "10*10*10", "电子"]]},
-        ])
-
         mock_get_resp = MagicMock()
         mock_get_resp.raise_for_status = MagicMock()
         mock_get_resp.json.side_effect = [
             {"code": 0, "data": {"sheets": [{"title": "测试", "sheet_id": "s1"}]}},
-            batch_resp
+            _mock_range_response([["SKU-货号", "分销价格", "长*宽*高(cm)", "类目"],
+                                  ["SKU-001", 100, "10*10*10", "电子"]]),
         ]
         mock_get.return_value = mock_get_resp
 
@@ -164,14 +159,10 @@ class TestSyncAllProducts:
         mock_post_resp.raise_for_status = MagicMock()
         mock_post.return_value = mock_post_resp
 
-        # Only header, no data rows
-        data = _mock_sheet_data(["SKU-货号", "分销价格"], [])
-
         mock_get_resp = MagicMock()
         mock_get_resp.raise_for_status = MagicMock()
         mock_get_resp.json.side_effect = [
-            {"code": 0, "data": {"sheets": [{"title": "空表", "sheet_id": "s1"}]}},
-            data
+            {"code": 0, "data": {"sheets": [{"title": "汇率", "sheet_id": "s1"}]}},
         ]
         mock_get.return_value = mock_get_resp
 
@@ -187,11 +178,6 @@ class TestSyncAllProducts:
         mock_post_resp.raise_for_status = MagicMock()
         mock_post.return_value = mock_post_resp
 
-        batch_resp = _mock_batch_response([
-            {"values": [["SKU-货号", "分销价格"], ["SKU-A1", 50], ["SKU-A2", 60]]},
-            {"values": [["SKU-货号", "分销价格"], ["SKU-B1", 70]]},
-        ])
-
         sheets_resp = {"code": 0, "data": {"sheets": [
             {"title": "Sheet-A", "sheet_id": "sA"},
             {"title": "Sheet-B", "sheet_id": "sB"},
@@ -199,7 +185,11 @@ class TestSyncAllProducts:
 
         mock_get_resp = MagicMock()
         mock_get_resp.raise_for_status = MagicMock()
-        mock_get_resp.json.side_effect = [sheets_resp, batch_resp]
+        mock_get_resp.json.side_effect = [
+            sheets_resp,
+            _mock_range_response([["SKU-货号", "分销价格"], ["SKU-A1", 50], ["SKU-A2", 60]]),
+            _mock_range_response([["SKU-货号", "分销价格"], ["SKU-B1", 70]]),
+        ]
         mock_get.return_value = mock_get_resp
 
         count, sheets = svc.sync_all_products()

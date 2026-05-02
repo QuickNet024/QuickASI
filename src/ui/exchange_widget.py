@@ -79,6 +79,17 @@ class ExchangeWidget(QWidget):
     def _cleanup_worker(self, worker_attr: str = '_worker'):
         old = getattr(self, worker_attr, None)
         if old is not None:
+            try: old.finished.disconnect()
+            except Exception: pass
+            try: old.error.disconnect()
+            except Exception: pass
+            old.requestInterruption()
+            if old.isRunning():
+                old.wait(10000)
+                if old.isRunning():
+                    # Thread still running — keep reference alive
+                    # so Python GC doesn't destroy it
+                    return
             old.deleteLater()
             setattr(self, worker_attr, None)
 
@@ -94,14 +105,14 @@ class ExchangeWidget(QWidget):
         self._worker.start()
 
     def _on_done(self, rate_dict):
-        self._worker = None
+        self._cleanup_worker()
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText(" 同步汇率")
         self._display_rate(rate_dict["cny_to_rub"], rate_dict.get("updated_at"))
         self.rate_updated.emit(rate_dict["cny_to_rub"])
 
     def _on_error(self, err):
-        self._worker = None
+        self._cleanup_worker()
         self.btn_sync.setEnabled(True)
         self.btn_sync.setText(" 同步汇率")
         self.lbl_updated.setText(f"(同步失败)")

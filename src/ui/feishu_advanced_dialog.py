@@ -23,6 +23,7 @@ from src.ui.assets.icons import get_util_icon
 logger = logging.getLogger(__name__)
 
 
+
 class FetchMetaWorker(QThread):
     """后台读取飞书 sheet 元数据"""
     finished = Signal(dict)
@@ -36,9 +37,11 @@ class FetchMetaWorker(QThread):
         try:
             svc = FeishuService(self.db)
             result = svc.get_all_sheet_headers()
-            self.finished.emit(result)
+            if not self.isInterruptionRequested():
+                self.finished.emit(result)
         except Exception as e:
-            self.error.emit(str(e))
+            if not self.isInterruptionRequested():
+                self.error.emit(str(e))
 
 
 COL_TYPES = [
@@ -526,9 +529,22 @@ class FeishuAdvancedDialog(QDialog):
 
     def _cleanup_worker(self, worker_attr: str = '_worker'):
         old = getattr(self, worker_attr, None)
-        if old is not None:
-            old.deleteLater()
-            setattr(self, worker_attr, None)
+        if old is None:
+            return
+        try: old.finished.disconnect()
+        except Exception: pass
+        try: old.error.disconnect()
+        except Exception: pass
+        old.requestInterruption()
+        if old.isRunning():
+            old.wait(10000)
+        old.deleteLater()
+        setattr(self, worker_attr, None)
+
+    def reject(self):
+        """关闭对话框前清理后台线程"""
+        self._cleanup_worker()
+        super().reject()
 
     # ═══ 读取飞书结构 ═══════════════════════════
 
@@ -544,7 +560,11 @@ class FeishuAdvancedDialog(QDialog):
         self._worker.start()
 
     def _on_fetch_done(self, sheet_headers: dict):
-        self._worker = None
+        try:
+            _ = self.btn_fetch
+        except RuntimeError:
+            return
+        self._cleanup_worker()
         self.btn_fetch.setEnabled(True)
         self.btn_fetch.setText(" 刷新结构")
         self._sheet_headers = sheet_headers
@@ -583,7 +603,11 @@ class FeishuAdvancedDialog(QDialog):
             self._populate_col_table(sheet_headers[first_sheet], col_mapping)
 
     def _on_fetch_error(self, err):
-        self._worker = None
+        try:
+            _ = self.btn_fetch
+        except RuntimeError:
+            return
+        self._cleanup_worker()
         self.btn_fetch.setEnabled(True)
         self.btn_fetch.setText(" 刷新结构")
         self.lbl_status.setText("刷新失败")

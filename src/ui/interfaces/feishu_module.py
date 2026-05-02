@@ -17,6 +17,7 @@ from src.ui.api_settings_dialog import ApiSettingsDialog
 from src.ui.assets.icons import get_util_icon
 
 
+
 # ═══ Worker ═══════════════════════════════════
 
 class FeishuSyncWorker(QThread):
@@ -172,16 +173,22 @@ class _FeishuWidget(QWidget):
 
     def _cleanup_worker(self, worker_attr: str = '_worker'):
         old = getattr(self, worker_attr, None)
-        if old is not None:
-            old.deleteLater()
-            setattr(self, worker_attr, None)
+        if old is None:
+            return
+        try: old.finished.disconnect(self._on_done)
+        except (TypeError, RuntimeError): pass
+        try: old.error.disconnect(self._on_error)
+        except (TypeError, RuntimeError): pass
+        old.requestInterruption()
+        if old.isRunning():
+            return  # Don't block, don't deleteLater
+        old.deleteLater()
+        setattr(self, worker_attr, None)
 
     def _on_sync(self):
         # 如果正在同步 → 取消
         if self._worker and self._worker.isRunning():
             self._worker.requestInterruption()
-            self._worker.quit()
-            self._worker.wait(3000)
             self._on_cancel()
             return
 
@@ -212,7 +219,7 @@ class _FeishuWidget(QWidget):
         self.progress.setVisible(False)
 
     def _on_done(self, count, sheets):
-        self._worker = None
+        self._cleanup_worker()
         self._reset_sync_button()
         self._refresh_status()
         if self._signals:
@@ -234,7 +241,7 @@ class _FeishuWidget(QWidget):
                 "建议：稍后重试，或检查API设置。")
 
     def _on_error(self, err):
-        self._worker = None
+        self._cleanup_worker()
         self._reset_sync_button()
         self.lbl_count.setText("同步失败")
         self.lbl_sync_time.setText("上次同步: 失败")
@@ -242,7 +249,6 @@ class _FeishuWidget(QWidget):
 
     def _on_cancel(self):
         """用户手动取消同步"""
-        self._cleanup_worker()
         self._reset_sync_button()
         self.lbl_count.setText("已取消")
         if self._signals:
@@ -282,11 +288,7 @@ class _FeishuWidget(QWidget):
         """Stop the worker thread gracefully."""
         if self._worker and self._worker.isRunning():
             self._worker.requestInterruption()
-            self._worker.quit()
-            self._worker.wait(3000)
-            if self._worker.isRunning():
-                self._worker.terminate()
-                self._worker.wait(1000)
+            self._worker.wait(10000)
         self._cleanup_worker()
 
 
