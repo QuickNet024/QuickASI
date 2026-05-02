@@ -93,7 +93,7 @@ class ExcelService:
 
         for row_num, price in price_updates.items():
             # Clamp: min 5, max 850000
-            price = max(5, min(850000, round(float(price), 2)))
+            price = max(5, min(850000, int(round(float(price)))))
             cell = ws.cell(row=row_num, column=self.COL_NEW_PRICE)
             cell.value = price  # Must be float, not string
 

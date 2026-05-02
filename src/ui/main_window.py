@@ -808,7 +808,7 @@ class MainWindow(QMainWindow):
                     "seller_sku": imp[5] or "",
                     "current_price": imp[10] or "",
                     "current_discount": imp[12] or 0,
-                    "discounted_price": round(float(imp[10]) * (1 - float(imp[12]) / 100), 2) if imp[10] is not None and imp[12] is not None else None,
+                    "discounted_price": round(self._safe_float(imp[10], 0) * (1 - self._safe_float(imp[12], 0) / 100), 2) if imp[10] is not None and imp[12] is not None else None,
                     "product_cost": None,
                     "shipping_fee": None,
                     "cbase": None,
@@ -836,7 +836,7 @@ class MainWindow(QMainWindow):
                     "seller_sku": imp[5] or "",
                     "current_price": imp[10] or "",
                     "current_discount": imp[12] or 0,
-                    "discounted_price": round(float(imp[10]) * (1 - float(imp[12]) / 100), 2) if imp[10] is not None and imp[12] is not None else calc[16],
+                    "discounted_price": round(self._safe_float(imp[10], 0) * (1 - self._safe_float(imp[12], 0) / 100), 2) if imp[10] is not None and imp[12] is not None else calc[16],
                     "product_cost": calc[5],        # product_cost
                     "shipping_fee": calc[17],       # shipping_fee
                     "cbase": calc[24],              # cbase
@@ -864,6 +864,18 @@ class MainWindow(QMainWindow):
             currency = self.discount_calc.get_currency()
             dlg = CalcDetailDialog(self._calc_results[data_idx], self._params, currency, self)
             dlg.exec()
+
+    # ── Helpers ────────────────────────────────
+
+    @staticmethod
+    def _safe_float(val, default=None):
+        """安全转 float：空字符串和 None 返回 default"""
+        if val is None or val == '':
+            return default
+        try:
+            return float(val)
+        except (ValueError, TypeError):
+            return default
 
     # ── Export ────────────────────────────────
 
