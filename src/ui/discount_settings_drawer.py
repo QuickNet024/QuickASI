@@ -359,17 +359,11 @@ class DiscountSettingsDrawer(QFrame):
         layout = QVBoxLayout(group)
         layout.setSpacing(8)
 
-        self._btn_apply = QPushButton("✓ 应用")
+        self._btn_apply = QPushButton("✓ 应用并保存")
         self._btn_apply.setProperty("class", "btn-primary")
         self._btn_apply.setFixedHeight(36)
-        self._btn_apply.clicked.connect(self._on_apply)
+        self._btn_apply.clicked.connect(self._on_apply_save)
         layout.addWidget(self._btn_apply)
-
-        self._btn_save_default = QPushButton("💾 保存为默认配置")
-        self._btn_save_default.setProperty("class", "btn-outline")
-        self._btn_save_default.setFixedHeight(36)
-        self._btn_save_default.clicked.connect(self._on_save_default)
-        layout.addWidget(self._btn_save_default)
 
         return group
 
@@ -417,6 +411,11 @@ class DiscountSettingsDrawer(QFrame):
 
     def _on_save_default(self):
         self.saved_as_default.emit()
+
+    def _on_apply_save(self):
+        """Apply settings then save as defaults."""
+        self._on_apply()
+        self._on_save_default()
 
     # ── 动画 ─────────────────────────────────────────────
 

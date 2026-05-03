@@ -4,6 +4,7 @@ WB亏损计算系统 - 应用入口
 """
 import sys
 import os
+import shutil
 import threading
 
 # Ensure the project root is in Python path
@@ -17,6 +18,18 @@ else:
 
 sys.path.insert(0, _PROJECT_ROOT)
 os.chdir(_PROJECT_ROOT)
+
+# First run in frozen mode: copy bundled databases to persistent directory
+if getattr(sys, 'frozen', False):
+    data_dir = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'WB亏损计算系统')
+    bundled_data = os.path.join(sys._MEIPASS, 'data')
+    os.makedirs(data_dir, exist_ok=True)
+    if os.path.exists(bundled_data):
+        for f in os.listdir(bundled_data):
+            src = os.path.join(bundled_data, f)
+            dst = os.path.join(data_dir, f)
+            if os.path.isfile(src) and not os.path.exists(dst):
+                shutil.copy2(src, dst)
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import Qt

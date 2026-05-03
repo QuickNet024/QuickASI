@@ -323,28 +323,32 @@ class DiscountCalcWidget(QWidget):
         self._last_strategy = vals["strategy"]
         if "export_filter_mode" in vals:
             mode = vals["export_filter_mode"]
-            if self._last_shop_type == "wb_local":
-                self._export_filter_mode_local = mode
-            else:
-                self._export_filter_mode = mode
+            self._export_filter_mode = mode
+            self._export_filter_mode_local = mode  # Also update local
         if "export_filter_threshold" in vals:
             threshold = vals["export_filter_threshold"]
-            if self._last_shop_type == "wb_local":
-                self._export_filter_threshold_local = threshold
-            else:
-                self._export_filter_threshold = threshold
+            self._export_filter_threshold = threshold
+            self._export_filter_threshold_local = threshold  # Also update local
         # Update currency
         self._last_currency = "RUB" if self._last_shop_type == "wb_local" else "CNY"
         self._drawer.close()
         self._refresh_dashboard()
 
     def _on_drawer_saved(self):
-        """User clicked Save Default in drawer — persist to database."""
+        """User clicked Save Default in drawer — persist to database with feedback."""
         vals = self._drawer.get_values()
-        if self._svc and hasattr(self._svc, 'db'):
-            for key, value in vals.items():
-                if value is not None:
-                    self._svc.db.save_config(f"drawer_{key}", str(value))
+        try:
+            if self._svc and hasattr(self._svc, 'db'):
+                count = 0
+                for key, value in vals.items():
+                    if value is not None:
+                        self._svc.db.save_config(f"drawer_{key}", str(value))
+                        count += 1
+                QMessageBox.information(self, "保存成功", f"✅ 已保存 {count} 项设置为默认值")
+            else:
+                QMessageBox.warning(self, "保存失败", "❌ 数据库连接不可用")
+        except Exception as e:
+            QMessageBox.warning(self, "保存失败", f"❌ 无法保存设置：{e}")
         self._drawer.close()
 
     def refresh_theme(self, theme: str):

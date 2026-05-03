@@ -2,6 +2,21 @@
 """
 WB亏损计算系统 - 配置模块
 """
+import os
+import sys
+
+
+def _get_data_dir() -> str:
+    """EXE 模式用 %APPDATA%，开发模式用项目 data/ 目录"""
+    if getattr(sys, 'frozen', False):
+        base = os.path.join(os.environ.get('APPDATA', os.path.expanduser('~')), 'WB亏损计算系统')
+    else:
+        base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+_DATA_DIR = _get_data_dir()
 
 
 class Config:
@@ -58,11 +73,11 @@ class Config:
 
     # ── 数据库（独立数据库） ──
     DB_DIR = "data"
-    DB_APP_PATH = "data/app.db"
-    DB_FEISHU_PATH = "data/feishu.db"
-    DB_COMMISSION_PATH = "data/commission.db"
-    DB_EXCHANGE_RATE_PATH = "data/exchange_rate.db"
-    DB_DISCOUNT_CALC_PATH = "data/discount_calc.db"
-    DB_SHIPPING_PATH = "data/shipping.db"
+    DB_APP_PATH = os.path.join(_DATA_DIR, "app.db")
+    DB_FEISHU_PATH = os.path.join(_DATA_DIR, "feishu.db")
+    DB_COMMISSION_PATH = os.path.join(_DATA_DIR, "commission.db")
+    DB_EXCHANGE_RATE_PATH = os.path.join(_DATA_DIR, "exchange_rate.db")
+    DB_DISCOUNT_CALC_PATH = os.path.join(_DATA_DIR, "discount_calc.db")
+    DB_SHIPPING_PATH = os.path.join(_DATA_DIR, "shipping.db")
     # 旧路径（仅迁移参考，不再使用）
     DB_PATH = "data/loss_calc.db"
