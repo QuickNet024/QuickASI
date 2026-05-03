@@ -226,7 +226,7 @@ class DiscountCalcService:
             result.target_discount = calc.calc_target_discount(current_price, calc_result.target_price)
 
             results.append(result)
-            if progress_callback:
+            if progress_callback and ((idx + 1) % 100 == 0 or idx == len(raw_rows) - 1):
                 progress_callback(len(raw_rows), idx + 1)
 
         # Clear previous results and save new
@@ -403,7 +403,7 @@ class DiscountCalcService:
 
             # breakeven, profit, max_discount, min_price, target_discount, target_price remain None
             results.append(result)
-            if progress_callback:
+            if progress_callback and ((idx + 1) % 100 == 0 or idx == len(raw_rows) - 1):
                 progress_callback(len(raw_rows), idx + 1)
 
         self.db.clear_calc_results()
