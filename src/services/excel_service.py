@@ -1,3 +1,4 @@
+import math
 import openpyxl
 import logging
 import shutil
@@ -93,7 +94,7 @@ class ExcelService:
 
         for row_num, price in price_updates.items():
             # Clamp: min 5, max 850000
-            price = max(5, min(850000, int(round(float(price)))))
+            price = max(5, min(850000, math.ceil(float(price))))
             cell = ws.cell(row=row_num, column=self.COL_NEW_PRICE)
             cell.value = price  # Must be float, not string
 
