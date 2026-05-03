@@ -936,16 +936,12 @@ class MainWindow(QMainWindow):
                 target_discount = calc[22]  # target_discount (目标折扣)
                 min_price = calc[21]        # min_price
 
-                if strategy in (DiscountCalcWidget.STRATEGY_DISCOUNT_ONLY, DiscountCalcWidget.STRATEGY_BOTH):
+                if strategy == DiscountCalcWidget.STRATEGY_DISCOUNT_ONLY:
                     if self._passes_export_filter(profit, dp, filter_mode, filter_threshold) and target_discount is not None:
                         if target_discount < 0:
                             negative_discount_rows.append(row_num)
                             target_discount = 0
                         discount_updates[row_num] = target_discount
-
-                if strategy in (DiscountCalcWidget.STRATEGY_PRICE_ONLY, DiscountCalcWidget.STRATEGY_BOTH):
-                    if self._passes_export_filter(profit, dp, filter_mode, filter_threshold) and min_price is not None:
-                        price_updates[row_num] = min_price
 
                 # 保持折扣调价: 负折扣时保留当前折扣，用 target_new_price 写新价
                 if strategy == DiscountCalcWidget.STRATEGY_KEEP_DISCOUNT:

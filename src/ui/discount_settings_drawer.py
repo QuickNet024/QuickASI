@@ -316,8 +316,6 @@ class DiscountSettingsDrawer(QFrame):
 
         self._combo_strategy = QComboBox()
         self._combo_strategy.addItem("折扣优先", "discount_only")
-        self._combo_strategy.addItem("价格优先", "price_only")
-        self._combo_strategy.addItem("价格 + 折扣", "both")
         self._combo_strategy.addItem("保持折扣调价", "keep_discount")
         self._combo_strategy.addItem("折扣归零调价", "zero_discount")
         layout.addWidget(self._combo_strategy)
