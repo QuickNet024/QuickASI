@@ -348,9 +348,13 @@ class DiscountCalcWidget(QWidget):
         self._drawer.close()
 
     def refresh_theme(self, theme: str):
-        """Notify drawer of theme change."""
+        """Notify drawer and tables of theme change."""
         if self._drawer is not None:
             self._drawer.refresh_theme(theme)
+        # Refresh child table views
+        for tbl in (self.raw_table, self.match_table, self.calc_table, self.result_table):
+            if tbl is not None:
+                tbl.refresh_theme()
 
     def _load_drawer_defaults(self):
         """Restore saved drawer defaults from app_config on startup."""

@@ -247,7 +247,7 @@ QPushButton[class="mini-btn"] {{
 }}
 QPushButton[class="mini-btn"]:hover {{
     background: #3A3A4A;
-    color: #9AA0A6555;
+    color: #9AA0A6;
 }}
 
 /* Column Header Label */
@@ -323,7 +323,7 @@ QWidget#dataCard QFrame#cardSep {{
 QWidget#moduleCard {{
     background: #1E1E2E;
     border: 1.5px solid #4A4A5A;
-    border-bottom: 3px solid #9AA0A6555;
+    border-bottom: 3px solid #9AA0A6;
     border-radius: 16px;
     min-height: 60px;
 }}
@@ -415,7 +415,7 @@ QWidget#moduleCard QFrame#moduleSep {{
 QPushButton#moduleRemoveBtn {{
     background: transparent;
     border: none;
-    color: #9AA0A6666;
+    color: #9AA0A6;
     font-size: 16px;
     font-weight: bold;
     border-radius: 12px;
@@ -638,7 +638,7 @@ QStatusBar {{
 QTextEdit#debugLogTextEdit[class="debug-log-dark"] {{
     background: #2D2D3F;
     color: #4A4A5A;
-    border: 1px solid #9AA0A6555;
+    border: 1px solid #9AA0A6;
 }}
 
 QTextEdit#debugLogTextEdit[class="debug-log-light"] {{

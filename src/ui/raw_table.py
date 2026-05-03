@@ -93,3 +93,7 @@ class RawTable(BaseTableView):
         """接受 list[list] 数据（非 list[dict]）。"""
         self._model.set_data_from_rows(data)
         self._set_column_widths()
+
+    def refresh_theme(self):
+        """Force repaint after theme switch for QSS re-apply."""
+        self.viewport().update()

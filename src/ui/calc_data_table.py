@@ -180,3 +180,7 @@ class CalcDataTable(BaseTableView):
     def _on_header_clicked(self, col):
         super()._on_header_clicked(col)
         self._rebuild_view_buttons()
+
+    def refresh_theme(self):
+        """Force repaint after theme switch to update ThemeColors."""
+        self.viewport().update()

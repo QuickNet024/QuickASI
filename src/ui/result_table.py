@@ -189,3 +189,7 @@ class ResultTable(BaseTableView):
     def update_calc_columns(self, data: list):
         self._results = data
         super().update_calc_columns(data)
+
+    def refresh_theme(self):
+        """Force repaint after theme switch to update ThemeColors."""
+        self.viewport().update()

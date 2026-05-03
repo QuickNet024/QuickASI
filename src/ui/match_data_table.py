@@ -173,3 +173,7 @@ class MatchDataTable(BaseTableView):
     def clear_match_columns(self):
         """Set all match columns to None (display as "-")."""
         self._model.clear_columns(self.MATCH_COLUMN_KEYS)
+
+    def refresh_theme(self):
+        """Force repaint after theme switch to update ThemeColors."""
+        self.viewport().update()
